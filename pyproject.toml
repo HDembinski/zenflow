@@ -30,7 +30,7 @@ multi_line_output = 3
 
 [tool.ruff]
 select = ["E", "F", "W", "D"]
-ignore = ["D212", "D203"]
+ignore = ["D212", "D203", "D107", "D102"]
 unfixable = ["ERA"]
 
 [tool.pytest.ini_options]

@@ -1,20 +1,19 @@
 """Define the bijectors used in the normalizing flows."""
+
 from functools import update_wrapper
-from typing import Callable, Sequence, Tuple, Union
+from typing import Callable, Sequence, Tuple
 
 import jax.numpy as jnp
 from jax import random
 from jax.nn import softmax, softplus
 
-from pzflow.utils import DenseReluNetwork, RationalQuadraticSpline
-
-# define a type alias for Jax Pytrees
-Pytree = Union[tuple, list]
-Bijector_Info = Tuple[str, tuple]
+from .utils import DenseReluNetwork, RationalQuadraticSpline
+from .typing import Pytree, Bijector_Info
 
 
 class ForwardFunction:
-    """Return the output and log_det of the forward bijection on the inputs.
+    """
+    Return the output and log_det of the forward bijection on the inputs.
 
     ForwardFunction of a Bijector, originally returned by the
     InitFunction of the Bijector.
@@ -45,7 +44,8 @@ class ForwardFunction:
 
 
 class InverseFunction:
-    """Return the output and log_det of the inverse bijection on the inputs.
+    """
+    Return the output and log_det of the inverse bijection on the inputs.
 
     InverseFunction of a Bijector, originally returned by the
     InitFunction of the Bijector.
@@ -76,7 +76,8 @@ class InverseFunction:
 
 
 class InitFunction:
-    """Initialize the corresponding Bijector.
+    """
+    Initialize the corresponding Bijector.
 
     InitFunction returned by the initialization of a Bijector.
 
@@ -108,7 +109,7 @@ class InitFunction:
 
 
 class Bijector:
-    """Wrapper class for bijector functions"""
+    """Wrapper class for bijector functions."""
 
     def __init__(self, func: Callable) -> None:
         self._func = func
@@ -122,7 +123,8 @@ class Bijector:
 def Chain(
     *inputs: Sequence[Tuple[InitFunction, Bijector_Info]]
 ) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that chains multiple InitFunctions into a single InitFunction.
+    """
+    Bijector that chains multiple InitFunctions into a single InitFunction.
 
     Parameters
     ----------
@@ -137,7 +139,6 @@ def Chain(
         Tuple('Chain', Tuple(Bijector_Info for each bijection in the chain))
         This allows the chain to be recreated later.
     """
-
     init_funs = tuple(i[0] for i in inputs)
     bijector_info = ("Chain", tuple(i[1] for i in inputs))
 
@@ -166,9 +167,7 @@ def Chain(
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            return bijector_chain(
-                params[::-1], inverse_funs[::-1], inputs, **kwargs
-            )
+            return bijector_chain(params[::-1], inverse_funs[::-1], inputs, **kwargs)
 
         return all_params, forward_fun, inverse_fun
 
@@ -176,10 +175,9 @@ def Chain(
 
 
 @Bijector
-def ColorTransform(
-    ref_idx: int, mag_idx: int
-) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that calculates photometric colors from magnitudes.
+def ColorTransform(ref_idx: int, mag_idx: int) -> Tuple[InitFunction, Bijector_Info]:
+    """
+    Bijector that calculates photometric colors from magnitudes.
 
     Using ColorTransform restricts and impacts the order of columns in the
     corresponding normalizing flow. See the notes below for an example.
@@ -221,7 +219,6 @@ def ColorTransform(
     the colors [u-g, g-i, i-r, r-z, z-y]. You can chain multiple ColorTransforms
     back-to-back to create colors in a non-adjacent manner.
     """
-
     # validate parameters
     if ref_idx <= 0:
         raise ValueError("ref_idx must be a positive integer.")
@@ -317,7 +314,8 @@ def ColorTransform(
 def InvSoftplus(
     column_idx: int, sharpness: float = 1
 ) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that applies inverse softplus to the specified column(s).
+    """
+    Bijector that applies inverse softplus to the specified column(s).
 
     Applying the inverse softplus ensures that samples from that column will
     always be non-negative. This is because samples are the output of the
@@ -341,7 +339,6 @@ def InvSoftplus(
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
-
     idx = jnp.atleast_1d(column_idx)
     k = jnp.atleast_1d(sharpness)
     if len(idx) != len(k) and len(k) != 1:
@@ -384,7 +381,8 @@ def NeuralSplineCoupling(
     n_conditions: int = 0,
     periodic: bool = False,
 ) -> Tuple[InitFunction, Bijector_Info]:
-    """A coupling layer bijection with rational quadratic splines.
+    """
+    Create coupling layer bijection with rational quadratic splines.
 
     This Bijector is a Coupling Layer [1,2], and as such only transforms
     the second half of input dimensions (or the last N dimensions, where
@@ -443,7 +441,6 @@ def NeuralSplineCoupling(
         Normalizing Flows on Tori and Spheres. arxiv:2002.02428, 2020
         http://arxiv.org/abs/2002.02428
     """
-
     if not isinstance(periodic, bool):
         raise ValueError("`periodic` must be True or False.")
 
@@ -465,9 +462,7 @@ def NeuralSplineCoupling(
 
         if transformed_dim is None:
             upper_dim = input_dim // 2  # variables that determine NN params
-            lower_dim = (
-                input_dim - upper_dim
-            )  # variables transformed by the NN
+            lower_dim = input_dim - upper_dim  # variables transformed by the NN
         else:
             upper_dim = input_dim - transformed_dim
             lower_dim = transformed_dim
@@ -481,13 +476,9 @@ def NeuralSplineCoupling(
 
         # calculate spline parameters as a function of the upper variables
         def spline_params(params, upper, conditions):
-            key = jnp.hstack((upper, conditions))[
-                :, : upper_dim + n_conditions
-            ]
-            outputs = network_apply_fun(params, key)
-            outputs = jnp.reshape(
-                outputs, [-1, lower_dim, 3 * K - 1 + int(periodic)]
-            )
+            X = jnp.hstack((upper, conditions))[:, : upper_dim + n_conditions]
+            outputs = network_apply_fun(params, X)
+            outputs = jnp.reshape(outputs, [-1, lower_dim, 3 * K - 1 + int(periodic)])
             W, H, D = jnp.split(outputs, [K, 2 * K], axis=2)
             W = 2 * B * softmax(W)
             H = 2 * B * softmax(H)
@@ -527,7 +518,8 @@ def NeuralSplineCoupling(
 
 @Bijector
 def Reverse() -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that reverses the order of inputs.
+    """
+    Create bijector that reverses the order of inputs.
 
     Returns
     -------
@@ -537,7 +529,6 @@ def Reverse() -> Tuple[InitFunction, Bijector_Info]:
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
-
     bijector_info = ("Reverse", ())
 
     @InitFunction
@@ -561,7 +552,8 @@ def Reverse() -> Tuple[InitFunction, Bijector_Info]:
 
 @Bijector
 def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that rolls inputs along their last column using jnp.roll.
+    """
+    Create bijector that rolls inputs along their last column using jnp.roll.
 
     Parameters
     ----------
@@ -576,7 +568,6 @@ def Roll(shift: int = 1) -> Tuple[InitFunction, Bijector_Info]:
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
-
     if not isinstance(shift, int):
         raise ValueError("shift must be an integer.")
 
@@ -613,7 +604,8 @@ def RollingSplineCoupling(
     n_conditions: int = 0,
     periodic: bool = False,
 ) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that alternates NeuralSplineCouplings and Roll bijections.
+    """
+    Create bijector that alternates NeuralSplineCouplings and Roll bijections.
 
     Parameters
     ----------
@@ -649,7 +641,6 @@ def RollingSplineCoupling(
     Bijector_Info
         Nested tuple of the Bijector name and input parameters. This allows
         it to be recreated later.
-
     """
     return Chain(
         *(
@@ -670,7 +661,8 @@ def RollingSplineCoupling(
 
 @Bijector
 def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that multiplies inputs by a scalar.
+    """
+    Create bijector that multiplies inputs by a scalar.
 
     Parameters
     ----------
@@ -685,7 +677,6 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
-
     if isinstance(scale, jnp.ndarray):
         if scale.dtype != jnp.float32:
             raise ValueError("scale must be a float or array of floats.")
@@ -699,17 +690,13 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = scale * inputs
-            log_det = jnp.log(scale ** inputs.shape[-1]) * jnp.ones(
-                inputs.shape[0]
-            )
+            log_det = jnp.log(scale ** inputs.shape[-1]) * jnp.ones(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = 1 / scale * inputs
-            log_det = -jnp.log(scale ** inputs.shape[-1]) * jnp.ones(
-                inputs.shape[0]
-            )
+            log_det = -jnp.log(scale ** inputs.shape[-1]) * jnp.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -721,13 +708,14 @@ def Scale(scale: float) -> Tuple[InitFunction, Bijector_Info]:
 def ShiftBounds(
     min: float, max: float, B: float = 5
 ) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector shifts the bounds of inputs so the lie in the range (-B, B).
+    """
+    Create bijector that shifts the bounds of inputs so the lie in the range (-B, B).
 
     Parameters
     ----------
     min : float
         The minimum of the input range.
-    min : float
+    max : float
         The maximum of the input range.
     B : float; default=5
         The extent of the output bounds, which will be (-B, B).
@@ -740,7 +728,6 @@ def ShiftBounds(
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
-
     min = jnp.atleast_1d(min)
     max = jnp.atleast_1d(max)
     if len(min) != len(max):
@@ -762,17 +749,13 @@ def ShiftBounds(
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
             outputs = B * (inputs - mean) / half_range
-            log_det = jnp.log(jnp.prod(B / half_range)) * jnp.ones(
-                inputs.shape[0]
-            )
+            log_det = jnp.log(jnp.prod(B / half_range)) * jnp.ones(inputs.shape[0])
             return outputs, log_det
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
             outputs = inputs * half_range / B + mean
-            log_det = jnp.log(jnp.prod(half_range / B)) * jnp.ones(
-                inputs.shape[0]
-            )
+            log_det = jnp.log(jnp.prod(half_range / B)) * jnp.ones(inputs.shape[0])
             return outputs, log_det
 
         return (), forward_fun, inverse_fun
@@ -782,7 +765,8 @@ def ShiftBounds(
 
 @Bijector
 def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that randomly permutes inputs.
+    """
+    Create bijector that randomly permutes inputs.
 
     Returns
     -------
@@ -792,7 +776,6 @@ def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
-
     bijector_info = ("Shuffle", ())
 
     @InitFunction
@@ -822,7 +805,8 @@ def Shuffle() -> Tuple[InitFunction, Bijector_Info]:
 def StandardScaler(
     means: jnp.array, stds: jnp.array
 ) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that applies standard scaling to each input.
+    """
+    Create bijector that applies standard scaling to each input.
 
     Each input dimension i has an associated mean u_i and standard dev s_i.
     Each input is rescaled as (input[i] - u_i)/s_i, so that each input dimension
@@ -843,7 +827,6 @@ def StandardScaler(
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
-
     bijector_info = ("StandardScaler", (means, stds))
 
     @InitFunction
@@ -867,7 +850,8 @@ def StandardScaler(
 
 @Bijector
 def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
-    """Bijector that dequantizes discrete variables with uniform noise.
+    """
+    Create bijector that dequantizes discrete variables with uniform noise.
 
     Dequantizers are necessary for modeling discrete values with a flow.
     Note that this isn't technically a bijector.
@@ -886,7 +870,6 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
         Tuple of the Bijector name and the input parameters.
         This allows it to be recreated later.
     """
-
     bijector_info = ("UniformDequantizer", (column_idx,))
     column_idx = jnp.array(column_idx)
 
@@ -894,9 +877,7 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
     def init_fun(rng, input_dim, **kwargs):
         @ForwardFunction
         def forward_fun(params, inputs, **kwargs):
-            u = random.uniform(
-                random.PRNGKey(0), shape=inputs[:, column_idx].shape
-            )
+            u = random.uniform(random.PRNGKey(0), shape=inputs[:, column_idx].shape)
             outputs = inputs.astype(float)
             outputs.at[:, column_idx].set(outputs[:, column_idx] + u)
             log_det = jnp.zeros(inputs.shape[0])
@@ -904,9 +885,7 @@ def UniformDequantizer(column_idx: int) -> Tuple[InitFunction, Bijector_Info]:
 
         @InverseFunction
         def inverse_fun(params, inputs, **kwargs):
-            outputs = inputs.at[:, column_idx].set(
-                jnp.floor(inputs[:, column_idx])
-            )
+            outputs = inputs.at[:, column_idx].set(jnp.floor(inputs[:, column_idx]))
             log_det = jnp.zeros(inputs.shape[0])
             return outputs, log_det
 

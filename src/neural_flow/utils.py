@@ -1,16 +1,14 @@
 """Define utility functions for use in other modules."""
+
 from typing import Callable, Tuple
 
 import jax.numpy as jnp
-from jax import random
-from jax.example_libraries.stax import Dense, LeakyRelu, serial
-
-from pzflow import bijectors
+from flax import linen as nn
+from . import bijectors
 
 
 def build_bijector_from_info(info: tuple) -> tuple:
-    """Build a Bijector from a Bijector_Info object"""
-
+    """Build a Bijector from a Bijector_Info object."""
     # recurse through chains
     if info[0] == "Chain":
         return bijectors.Chain(*(build_bijector_from_info(i) for i in info[1]))
@@ -22,7 +20,8 @@ def build_bijector_from_info(info: tuple) -> tuple:
 def DenseReluNetwork(
     out_dim: int, hidden_layers: int, hidden_dim: int
 ) -> Tuple[Callable, Callable]:
-    """Create a dense neural network with Relu after hidden layers.
+    """
+    Create a dense neural network with Relu after hidden layers.
 
     Parameters
     ----------
@@ -42,23 +41,21 @@ def DenseReluNetwork(
     forward_fun : function
         The function that passes the inputs through the neural network.
     """
-    init_fun, forward_fun = serial(
-        *(Dense(hidden_dim), LeakyRelu) * hidden_layers,
-        Dense(out_dim),
+    init_fun, forward_fun = nn.Sequential(
+        [*(nn.Dense(hidden_dim), nn.LeakyRelu) * hidden_layers, nn.Dense(out_dim)]
     )
     return init_fun, forward_fun
 
 
-def gaussian_error_model(
-    key, X: jnp.ndarray, Xerr: jnp.ndarray, nsamples: int
-) -> jnp.ndarray:
-    """
-    Default Gaussian error model were X are the means and Xerr are the stds.
-    """
+# def gaussian_error_model(
+#     key, X: jnp.ndarray, Xerr: jnp.ndarray, nsamples: int
+# ) -> jnp.ndarray:
+#     """
+#     Default Gaussian error model were X are the means and Xerr are the stds.
+#     """
+#     eps = random.normal(key, shape=(X.shape[0], nsamples, X.shape[1]))
 
-    eps = random.normal(key, shape=(X.shape[0], nsamples, X.shape[1]))
-
-    return X[:, None, :] + eps * Xerr[:, None, :]
+#     return X[:, None, :] + eps * Xerr[:, None, :]
 
 
 def RationalQuadraticSpline(
@@ -70,7 +67,8 @@ def RationalQuadraticSpline(
     periodic: bool = False,
     inverse: bool = False,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Apply rational quadratic spline to inputs and return outputs with log_det.
+    """
+    Apply rational quadratic spline to inputs and return outputs with log_det.
 
     Applies the piecewise rational quadratic spline developed in [1].
 
@@ -184,9 +182,7 @@ def RationalQuadraticSpline(
             + 2 * input_sk * relx * (1 - relx)
             + input_dk * (1 - relx) ** 2
         )
-        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (
-            1 - relx
-        )
+        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
         log_det = 2 * jnp.log(input_sk) + jnp.log(dnum) - 2 * jnp.log(dden)
         # if not periodic, replace log_det for out-of-bounds values = 0
         if not periodic:
@@ -200,9 +196,7 @@ def RationalQuadraticSpline(
         # calculate spline
         relx = (masked_inputs - input_xk) / input_wk
         num = input_hk * (input_sk * relx**2 + input_dk * relx * (1 - relx))
-        den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (
-            1 - relx
-        )
+        den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
         outputs = input_yk + num / den
         # if not periodic, replace out-of-bounds values with original values
         if not periodic:
@@ -215,9 +209,7 @@ def RationalQuadraticSpline(
             + 2 * input_sk * relx * (1 - relx)
             + input_dk * (1 - relx) ** 2
         )
-        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (
-            1 - relx
-        )
+        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
         log_det = 2 * jnp.log(input_sk) + jnp.log(dnum) - 2 * jnp.log(dden)
         # if not periodic, replace log_det for out-of-bounds values = 0
         if not periodic:
@@ -230,7 +222,7 @@ def RationalQuadraticSpline(
 def sub_diag_indices(
     inputs: jnp.ndarray,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Return indices for diagonal of 2D blocks in 3D array"""
+    """Return indices for diagonal of 2D blocks in 3D array."""
     if inputs.ndim != 3:
         raise ValueError("Input must be a 3D array.")
     nblocks = inputs.shape[0]
