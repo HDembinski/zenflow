@@ -1,60 +1,44 @@
-[tool.poetry]
-name = "pzflow"
-version = "3.1.2"
-description = "Probabilistic modeling of tabular data with normalizing flows."
-authors = ["John Franklin Crenshaw <jfcrenshaw@gmail.com>"]
-license = "MIT"
-repository = "https://github.com/jfcrenshaw/pzflow"
-readme = "README.md"
-
-
-[tool.poetry.dependencies]
-python = "^3.8.1"
-jax = "^0.4.2"
-jaxlib = "^0.4.2"
-optax = "^0.1.4"
-pandas = ">=1.1"
-dill = "^0.3.6"
-tqdm = "^4.64.1"
-
-[tool.poetry.dev-dependencies]
-pre-commit = "^3.0.3"
-black = "^23.1.0"
-mypy = "^0.931"
-isort = "^5.12.0"
-flake8 = "^6.0.0"
-flake8-bugbear = "^23.1.20"
-flake8-builtins = "^2.1.0"
-flake8-comprehensions = "^3.10.1"
-flake8-docstrings = "^1.7.0"
-flake8-isort = "^6.0.0"
-flake8-markdown = "^0.4.0"
-flake8-print = "^5.0.0"
-flake8-pytest-style = "^1.6.0"
-flake8-simplify = "^0.19.3"
-flake8-tidy-imports = "^4.8.0"
-pandas-vet = "^0.2.3"
-pep8-naming = "^0.13.3"
-pytest = "^7.2.1"
-pytest-cov = "^4.0.0"
-pytest-xdist = "^3.1.0"
-jupyter = "^1.0.0"
-matplotlib = "^3.6.3"
-toml = "^0.10.2"
-
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools >= 61", "setuptools_scm[toml] >= 6.2"]
+build-backend = "setuptools.build_meta"
 
-[tool.black]
-line-length=79
+[project]
+name = "neural-flow"
+version = "3.1.2"
+description = "Probabilistic modeling with normalizing flows."
+authors = ["Hans Dembinski <hans.dembinski@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = ["jax ^= 0.4.2", "jaxlib ^=0.4.2", "optax ^= 0.1.4", "rich"]
+dynamic = ["version"]
+
+[project.urls]
+repository = "https://github.com/hdembinski/neural_flow"
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-cov", "coverage[toml]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
 
 [tool.isort]
+profile = "black"
 multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-line_length = 79
 
-[tool.pyright]
-reportGeneralTypeIssues = false
+[tool.ruff]
+select = ["E", "F", "W", "D"]
+ignore = ["D212", "D203"]
+unfixable = ["ERA"]
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules --strict-config --strict-markers -q -ra --ff"
+testpaths = ["src/resample", "tests"]
+log_cli_level = "INFO"
+xfail_strict = true
+filterwarnings = [
+  "error::DeprecationWarning",
+  "error::numpy.VisibleDeprecationWarning",
+]
