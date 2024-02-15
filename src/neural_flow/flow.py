@@ -14,6 +14,8 @@ from .bijectors import (
     ShiftBounds,
 )
 
+__all__ = ["Flow"]
+
 
 class Flow:
     """A conditional normalizing flow."""
@@ -31,6 +33,7 @@ class Flow:
         rngkey: Any,
         bijector: Optional[Tuple[InitFunction, Bijector_Info]] = None,
     ) -> Pytree:
+        self._latent.init(X)
 
         if bijector is None:
             bijector = Chain(
@@ -38,9 +41,15 @@ class Flow:
                 RollingSplineCoupling(X.shape[1], n_conditions=C.shape[1]),
             )
 
+        self._c_mean = jnp.mean(C, axis=0)
+        self._c_scale = 1 / jnp.std(C, axis=0)
+
         init_fun, self._bijector_info = bijector
         params, self._forward, self._inverse = init_fun(rngkey, X.shape[1])
         return params
+
+    def _c_standardize(self, C: jnp.ndarray) -> jnp.ndarray:
+        return (C - self._c_mean) * self._c_scale
 
     def log_prob(self, params: Pytree, X: jnp.ndarray, C: jnp.ndarray) -> jnp.ndarray:
         """
@@ -60,7 +69,8 @@ class Flow:
         jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        u, log_det = self._forward(params, X, conditions=C)
+        c = self._c_standardize(C)
+        u, log_det = self._forward(params, X, conditions=c)
         log_prob = self._latent.log_prob(u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
@@ -74,13 +84,13 @@ class Flow:
     ) -> jnp.ndarray:
         if isinstance(conditions_or_samples, int):
             samples = conditions_or_samples
-            conditions = jnp.zeros((samples, 0))
+            c = jnp.zeros((samples, 0))
         else:
             samples = conditions_or_samples.shape[0]
-            conditions = conditions_or_samples
+            c = self._c_standardize(conditions_or_samples)
         # draw from latent distribution
         rngkey = random.PRNGKey(seed)
         u = self._latent.sample(samples, rngkey)
         # take the inverse back to the data distribution
-        x = self._inverse(params, u, conditions=conditions)[0]
+        x = self._inverse(params, u, conditions=c)[0]
         return x

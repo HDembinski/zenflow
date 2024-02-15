@@ -6,7 +6,7 @@ from typing import Callable, Optional, Tuple
 from .typing import Bijector_Info
 from .bijectors import InitFunction
 import numpy as np
-from jax import random, jit, value_and_grad
+from jax import random, jit, grad
 import optax
 
 
@@ -44,7 +44,7 @@ def train(
     # define the training step function
     @jit
     def step(params, opt_state, x, c):
-        gradients = value_and_grad(loss_fn)(params, x, c)
+        gradients = grad(loss_fn)(params, x, c)
         updates, opt_state = optimizer.update(gradients, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state
@@ -54,14 +54,14 @@ def train(
     test_losses = []
 
     if progress:
-        from rich.progress_bar import track
+        from rich.progress import track
 
         loop = track(range(epochs))
     else:
         loop = range(epochs)
 
     # initialize variables for early stopping
-    best_loss = jnp.inf
+    best_epoch = 0
     best_params = params
 
     for epoch in loop:
@@ -81,17 +81,16 @@ def train(
         losses.append(loss_fn(params, X, C).item())
         test_losses.append(loss_fn(params, X_test, C_test).item())
 
-        if test_losses[-1] < best_loss:
-            best_loss = test_losses[-1]
+        if test_losses[-1] < test_losses[best_epoch]:
+            best_epoch = epoch
             best_params = params
 
         stop = np.isnan(losses[-1]) or (
             len(test_losses) > 2 * patience
-            and not np.min(test_losses[-patience:])
-            < np.min(test_losses[-2 * patience : -patience])
+            and not np.min(test_losses[-patience:]) < np.min(test_losses[:-patience])
         )
 
         if stop:
             break
 
-    return best_params, best_loss
+    return best_params, best_epoch, losses, test_losses

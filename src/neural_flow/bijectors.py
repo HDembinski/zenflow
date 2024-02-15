@@ -469,15 +469,15 @@ def NeuralSplineCoupling(
 
         # create the neural network that will take in the upper dimensions and
         # will return the spline parameters to transform the lower dimensions
-        network_init_fun, network_apply_fun = DenseReluNetwork(
+        network = DenseReluNetwork(
             (3 * K - 1 + int(periodic)) * lower_dim, hidden_layers, hidden_dim
         )
-        _, network_params = network_init_fun(rng, (upper_dim + n_conditions,))
+        network_params = network.init(rng, jnp.zeros((1, upper_dim + n_conditions)))
 
         # calculate spline parameters as a function of the upper variables
         def spline_params(params, upper, conditions):
             X = jnp.hstack((upper, conditions))[:, : upper_dim + n_conditions]
-            outputs = network_apply_fun(params, X)
+            outputs = network.apply(params, X)
             outputs = jnp.reshape(outputs, [-1, lower_dim, 3 * K - 1 + int(periodic)])
             W, H, D = jnp.split(outputs, [K, 2 * K], axis=2)
             W = 2 * B * softmax(W)

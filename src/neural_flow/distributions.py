@@ -14,6 +14,7 @@ class LatentDist(ABC):
 
     def init(self, X: jnp.ndarray):
         self.input_dim = X.shape[1]
+        assert self.input_dim > 0
 
     @abstractmethod
     def log_prob(self, X: jnp.ndarray) -> jnp.ndarray:

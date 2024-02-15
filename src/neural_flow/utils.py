@@ -1,61 +1,22 @@
 """Define utility functions for use in other modules."""
 
-from typing import Callable, Tuple
+from typing import Tuple
 
 import jax.numpy as jnp
 from flax import linen as nn
-from . import bijectors
 
 
-def build_bijector_from_info(info: tuple) -> tuple:
-    """Build a Bijector from a Bijector_Info object."""
-    # recurse through chains
-    if info[0] == "Chain":
-        return bijectors.Chain(*(build_bijector_from_info(i) for i in info[1]))
-    # build individual bijector from name and parameters
-    else:
-        return getattr(bijectors, info[0])(*info[1])
+class DenseReluNetwork(nn.Module):
+    out_dim: int
+    hidden_layers: int
+    hidden_dim: int
 
-
-def DenseReluNetwork(
-    out_dim: int, hidden_layers: int, hidden_dim: int
-) -> Tuple[Callable, Callable]:
-    """
-    Create a dense neural network with Relu after hidden layers.
-
-    Parameters
-    ----------
-    out_dim : int
-        The output dimension.
-    hidden_layers : int
-        The number of hidden layers
-    hidden_dim : int
-        The dimension of the hidden layers
-
-    Returns
-    -------
-    init_fun : function
-        The function that initializes the network. Note that this is the
-        init_function defined in the Jax stax module, which is different
-        from the functions of my InitFunction class.
-    forward_fun : function
-        The function that passes the inputs through the neural network.
-    """
-    init_fun, forward_fun = nn.Sequential(
-        [*(nn.Dense(hidden_dim), nn.LeakyRelu) * hidden_layers, nn.Dense(out_dim)]
-    )
-    return init_fun, forward_fun
-
-
-# def gaussian_error_model(
-#     key, X: jnp.ndarray, Xerr: jnp.ndarray, nsamples: int
-# ) -> jnp.ndarray:
-#     """
-#     Default Gaussian error model were X are the means and Xerr are the stds.
-#     """
-#     eps = random.normal(key, shape=(X.shape[0], nsamples, X.shape[1]))
-
-#     return X[:, None, :] + eps * Xerr[:, None, :]
+    @nn.compact
+    def __call__(self, x):
+        for _ in range(self.hidden_layers):
+            x = nn.Dense(self.hidden_dim)(x)
+            x = nn.leaky_relu(x)
+        return nn.Dense(self.out_dim)(x)
 
 
 def RationalQuadraticSpline(
