@@ -1,12 +1,12 @@
 """Define the Flow object that defines the normalizing flow."""
 
-from typing import Any, Union
+from typing import Any, Union, Optional, Tuple
+from .typing import Pytree, Array
 
 import jax.numpy as jnp
-from jax import random
+import jax
 
 from .distributions import Distribution, Uniform
-from .typing import Pytree, Array
 from .bijectors import (
     Bijector,
     Chain,
@@ -35,12 +35,23 @@ class Flow:
         )
         self.latent = latent
 
+    @staticmethod
+    def _normalize(x: Array, c: Optional[Array]) -> Tuple[Array, Array]:
+        if jnp.ndim(x) < 2:
+            x = x.reshape(-1, 1)
+        if c is None:
+            c = jnp.zeros((x.shape[0], 0))
+        elif jnp.ndim(c) < 2:
+            c = c.reshape(-1, 1)
+        return x, c
+
     def init(
         self,
         rngkey: Any,
         x: Array,
-        c: Array,
+        c: Optional[Array],
     ) -> Pytree:
+        x, c = self._normalize(x, c)
         self.c_dim = c.shape[1]
         self._c_mean = jnp.mean(c, axis=0)
         self._c_scale = 1 / jnp.std(c, axis=0)
@@ -50,7 +61,7 @@ class Flow:
     def _c_standardize(self, c: Array) -> Array:
         return (c - self._c_mean) * self._c_scale
 
-    def log_prob(self, params: Pytree, x: Array, c: Array) -> Array:
+    def log_prob(self, params: Pytree, x: Array, c: Optional[Array]) -> Array:
         """
         Calculate log probability density of inputs.
 
@@ -69,6 +80,7 @@ class Flow:
             Device array of shape (inputs.shape[0],).
 
         """
+        x, c = self._normalize(x, c)
         c = self._c_standardize(c)
         u, log_det = self.bijector.forward(params, x, c)
         log_prob = self.latent.log_prob(u) + log_det
@@ -92,9 +104,11 @@ class Flow:
                 raise ValueError("Second argument must be number of samples")
             size = conditions_or_size.shape[0]
             c = self._c_standardize(conditions_or_size)
+        if jnp.ndim(c) < 2:
+            c = c.reshape(-1, 1)
         if c.shape[1] != self.c_dim:
             msg = f"Number of conditions must be {self.c_dim}, got {c.shape[1]}"
             raise ValueError(msg)
-        u = self.latent.sample(size, random.PRNGKey(seed))
+        u = self.latent.sample(size, jax.random.PRNGKey(seed))
         x = self.bijector.inverse(params, u, c)[0]
         return x

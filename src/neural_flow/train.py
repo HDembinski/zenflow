@@ -3,7 +3,7 @@
 from .flow import Flow
 from .typing import Pytree, Array
 import jax.numpy as jnp
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import numpy as np
 import jax
 import optax
@@ -12,9 +12,9 @@ import optax
 def train(
     flow: Flow,
     X_train: Array,
-    C_train: Array,
     X_test: Array,
-    C_test: Array,
+    C_train: Optional[Array] = None,
+    C_test: Optional[Array] = None,
     epochs: int = 100,
     batch_size: int = 1024,
     optimizer: optax.GradientTransformation = optax.nadamw(learning_rate=1e-3),
@@ -28,8 +28,10 @@ def train(
 
     X_train = jax.device_put(X_train)
     X_test = jax.device_put(X_test)
-    C_train = jax.device_put(C_train)
-    C_test = jax.device_put(C_test)
+    if C_train is not None:
+        C_train = jax.device_put(C_train)
+    if C_test is not None:
+        C_test = jax.device_put(C_test)
 
     params = flow.init(init_key, X_train, C_train)
 
@@ -62,12 +64,16 @@ def train(
         batch_key, permute_key = jax.random.split(batch_key)
         perm = jax.random.permutation(permute_key, X_train.shape[0])
         X_perm = X_train[perm]
-        C_perm = C_train[perm]
+        if C_train is not None:
+            C_perm = C_train[perm]
 
         # loop through batches and step optimizer
         for batch_idx in range(0, len(X_perm), batch_size):
             X = X_perm[batch_idx : batch_idx + batch_size]
-            C = C_perm[batch_idx : batch_idx + batch_size]
+            if C_train is not None:
+                C = C_perm[batch_idx : batch_idx + batch_size]
+            else:
+                C = None
             params, opt_state = step(params, opt_state, X, C)
 
         losses.append(loss_fn(params, X, C).item())
