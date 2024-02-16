@@ -32,6 +32,9 @@ select = ["E", "F", "W", "D"]
 ignore = ["D212", "D203", "D107", "D102"]
 unfixable = ["ERA"]
 
+[tool.ruff.lint.extend-per-file-ignores]
+"*.ipynb" = ["D101", "D103"]
+
 [tool.mypy]
 ignore_missing_imports = true
 allow_redefinition = true

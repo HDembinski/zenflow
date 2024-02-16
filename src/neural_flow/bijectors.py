@@ -9,6 +9,15 @@ from .utils import rational_quadratic_spline, FeedForwardNetwork
 from jax.nn import softmax, softplus
 from flax import linen as nn
 
+__all__ = [
+    "Bijector",
+    "ShiftBounds",
+    "Roll",
+    "NeuralSplineCoupling",
+    "Chain",
+    "RollingSplineCoupling",
+]
+
 
 class Bijector(ABC):
     """Bijector base class."""
@@ -69,14 +78,16 @@ class Roll(Bijector):
 class NeuralSplineCoupling(Bijector):
     """Coupling layer bijection with rational quadratic splines."""
 
+    @staticmethod
+    def make_default_network(out_dim):
+        return FeedForwardNetwork(out_dim, 2, 128)
+
     def __init__(
         self,
         knots: int = 16,
         bound: float = 5,
         periodic: bool = False,
-        make_network: Callable[[int], nn.Module] = lambda out_dim: FeedForwardNetwork(
-            out_dim, 2, 128
-        ),
+        make_network: Callable[[int], nn.Module] = make_default_network,
     ):
         self.knots = knots
         self.bound = bound
@@ -174,9 +185,9 @@ class RollingSplineCoupling(Chain):
         knots: int = 16,
         bound: float = 5,
         periodic: bool = False,
-        make_network: Callable[[int], nn.Module] = lambda out_dim: FeedForwardNetwork(
-            out_dim, 2, 128
-        ),
+        make_network: Callable[
+            [int], nn.Module
+        ] = NeuralSplineCoupling.make_default_network,
     ):
         self.knotsnots = knots
         self.bound = bound

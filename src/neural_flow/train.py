@@ -48,8 +48,8 @@ def train(
         params = optax.apply_updates(params, updates)
         return params, opt_state
 
-    losses = [loss_fn(params, X_train, C_train).item()]
-    test_losses = []
+    loss_train = []
+    loss_test = []
 
     if progress:
         from rich.progress import track
@@ -76,20 +76,20 @@ def train(
                 C = None
             params, opt_state = step(params, opt_state, X, C)
 
-        losses.append(loss_fn(params, X, C).item())
-        test_losses.append(loss_fn(params, X_test, C_test).item())
+        loss_train.append(loss_fn(params, X, C).item())
+        loss_test.append(loss_fn(params, X_test, C_test).item())
 
-        if test_losses[-1] < test_losses[best_epoch]:
+        if loss_test[-1] < loss_test[best_epoch]:
             best_epoch = epoch
             best_params = params
 
-        stop = np.isnan(losses[-1]) or (
-            len(test_losses) > 2 * patience
-            and not np.min(test_losses[-patience:])
-            < np.min(test_losses[-2 * patience : -patience])
+        stop = np.isnan(loss_train[-1]) or (
+            len(loss_test) > 2 * patience
+            and not np.min(loss_test[-patience:])
+            < np.min(loss_test[-2 * patience : -patience])
         )
 
         if stop:
             break
 
-    return best_params, best_epoch, losses, test_losses
+    return best_params, best_epoch, loss_train, loss_test
