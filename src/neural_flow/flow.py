@@ -1,15 +1,15 @@
 """Define the Flow object that defines the normalizing flow."""
 
-from typing import Tuple, Any, Optional, Union
+from typing import Any, Union
 
 import jax.numpy as jnp
 from jax import random
 
-from . import distributions
-from .typing import Pytree, Bijector_Info
+from .distributions import Distribution, Uniform
+from .typing import Pytree, Array
 from .bijectors import (
+    Bijector,
     Chain,
-    InitFunction,
     RollingSplineCoupling,
     ShiftBounds,
 )
@@ -20,38 +20,37 @@ __all__ = ["Flow"]
 class Flow:
     """A conditional normalizing flow."""
 
+    latent: Distribution
+    bijector: Bijector
+
     def __init__(
         self,
-        latent: distributions.LatentDist = None,
+        *bijectors: Bijector,
+        latent: Distribution = Uniform(5),
     ) -> None:
-        self._latent = distributions.Uniform(5) if latent is None else latent
+        self.bijector = (
+            Chain(ShiftBounds(), RollingSplineCoupling())
+            if not bijectors
+            else bijectors[0] if len(bijectors) == 1 else Chain(*bijectors)
+        )
+        self.latent = latent
 
     def init(
         self,
-        X: jnp.ndarray,
-        C: jnp.ndarray,
         rngkey: Any,
-        bijector: Optional[Tuple[InitFunction, Bijector_Info]] = None,
+        x: Array,
+        c: Array,
     ) -> Pytree:
-        self._latent.init(X)
+        self.c_dim = c.shape[1]
+        self._c_mean = jnp.mean(c, axis=0)
+        self._c_scale = 1 / jnp.std(c, axis=0)
+        self.latent.init(x)
+        return self.bijector.init(rngkey, x, c)
 
-        if bijector is None:
-            bijector = Chain(
-                ShiftBounds(X.min(axis=0), X.max(axis=0), 4.0),
-                RollingSplineCoupling(X.shape[1], n_conditions=C.shape[1]),
-            )
+    def _c_standardize(self, c: Array) -> Array:
+        return (c - self._c_mean) * self._c_scale
 
-        self._c_mean = jnp.mean(C, axis=0)
-        self._c_scale = 1 / jnp.std(C, axis=0)
-
-        init_fun, self._bijector_info = bijector
-        params, self._forward, self._inverse = init_fun(rngkey, X.shape[1])
-        return params
-
-    def _c_standardize(self, C: jnp.ndarray) -> jnp.ndarray:
-        return (C - self._c_mean) * self._c_scale
-
-    def log_prob(self, params: Pytree, X: jnp.ndarray, C: jnp.ndarray) -> jnp.ndarray:
+    def log_prob(self, params: Pytree, x: Array, c: Array) -> Array:
         """
         Calculate log probability density of inputs.
 
@@ -59,19 +58,19 @@ class Flow:
         ----------
         params: Pytree
             Bijector parameters.
-        X : jnp.ndarray
+        x : Array
             Input data for which log probability density is calculated.
-        C : jnp.ndarray
+        c : Array
             Conditional data for the bijectors.
 
         Returns
         -------
-        jnp.ndarray
+        Array
             Device array of shape (inputs.shape[0],).
         """
-        c = self._c_standardize(C)
-        u, log_det = self._forward(params, X, conditions=c)
-        log_prob = self._latent.log_prob(u) + log_det
+        c = self._c_standardize(c)
+        u, log_det = self.bijector.forward(params, x, c)
+        log_prob = self.latent.log_prob(u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
         return log_prob
@@ -79,18 +78,22 @@ class Flow:
     def sample(
         self,
         params: Pytree,
-        conditions_or_samples: Union[jnp.ndarray, int],
+        conditions_or_size: Union[Array, int],
         seed: int = 0,
-    ) -> jnp.ndarray:
-        if isinstance(conditions_or_samples, int):
-            samples = conditions_or_samples
-            c = jnp.zeros((samples, 0))
+    ) -> Array:
+        if isinstance(conditions_or_size, int):
+            if self.c_dim > 0:
+                raise ValueError("Second argument must be an array of conditions")
+            size = conditions_or_size
+            c = jnp.zeros((size, 0))
         else:
-            samples = conditions_or_samples.shape[0]
-            c = self._c_standardize(conditions_or_samples)
-        # draw from latent distribution
-        rngkey = random.PRNGKey(seed)
-        u = self._latent.sample(samples, rngkey)
-        # take the inverse back to the data distribution
-        x = self._inverse(params, u, conditions=c)[0]
+            if self.c_dim == 0:
+                raise ValueError("Second argument must be number of samples")
+            size = conditions_or_size.shape[0]
+            c = self._c_standardize(conditions_or_size)
+        if c.shape[1] != self.c_dim:
+            msg = f"Number of conditions must be {self.c_dim}, got {c.shape[1]}"
+            raise ValueError(msg)
+        u = self.latent.sample(size, random.PRNGKey(seed))
+        x = self.bijector.inverse(params, u, c)[0]
         return x

@@ -1,15 +1,15 @@
 """Define the Flow object that defines the normalizing flow."""
 
-from typing import Any, Union
+from typing import Tuple, Any, Optional, Union
 
 import jax.numpy as jnp
 from jax import random
 
 from . import distributions
-from .typing import Pytree
-from .bijectors2 import (
-    Bijector,
+from .typing import Pytree, Bijector_Info
+from .bijectors import (
     Chain,
+    InitFunction,
     RollingSplineCoupling,
     ShiftBounds,
 )
@@ -22,31 +22,36 @@ class Flow:
 
     def __init__(
         self,
-        bijector: Bijector = None,
         latent: distributions.LatentDist = None,
     ) -> None:
-        self._bijector = (
-            Chain(ShiftBounds(4.0), RollingSplineCoupling(2))
-            if bijector is None
-            else bijector
-        )
         self._latent = distributions.Uniform(5) if latent is None else latent
 
     def init(
         self,
+        X: jnp.ndarray,
+        C: jnp.ndarray,
         rngkey: Any,
-        x: jnp.ndarray,
-        c: jnp.ndarray,
+        bijector: Optional[Tuple[InitFunction, Bijector_Info]] = None,
     ) -> Pytree:
-        self._latent.init(x)
-        self._c_mean = jnp.mean(c, axis=0)
-        self._c_scale = 1 / jnp.std(c, axis=0)
-        return self._bijector.init(rngkey, x, c)
+        self._latent.init(X)
 
-    def _c_standardize(self, c: jnp.ndarray) -> jnp.ndarray:
-        return (c - self._c_mean) * self._c_scale
+        if bijector is None:
+            bijector = Chain(
+                ShiftBounds(X.min(axis=0), X.max(axis=0), 4.0),
+                RollingSplineCoupling(X.shape[1], n_conditions=C.shape[1]),
+            )
 
-    def log_prob(self, params: Pytree, x: jnp.ndarray, c: jnp.ndarray) -> jnp.ndarray:
+        self._c_mean = jnp.mean(C, axis=0)
+        self._c_scale = 1 / jnp.std(C, axis=0)
+
+        init_fun, self._bijector_info = bijector
+        params, self._forward, self._inverse = init_fun(rngkey, X.shape[1])
+        return params
+
+    def _c_standardize(self, C: jnp.ndarray) -> jnp.ndarray:
+        return (C - self._c_mean) * self._c_scale
+
+    def log_prob(self, params: Pytree, X: jnp.ndarray, C: jnp.ndarray) -> jnp.ndarray:
         """
         Calculate log probability density of inputs.
 
@@ -54,9 +59,9 @@ class Flow:
         ----------
         params: Pytree
             Bijector parameters.
-        x : jnp.ndarray
+        X : jnp.ndarray
             Input data for which log probability density is calculated.
-        c : jnp.ndarray
+        C : jnp.ndarray
             Conditional data for the bijectors.
 
         Returns
@@ -64,8 +69,8 @@ class Flow:
         jnp.ndarray
             Device array of shape (inputs.shape[0],).
         """
-        c = self._c_standardize(c)
-        u, log_det = self._bijector.forward(params, x, c)
+        c = self._c_standardize(C)
+        u, log_det = self._forward(params, X, conditions=c)
         log_prob = self._latent.log_prob(u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
@@ -87,5 +92,5 @@ class Flow:
         rngkey = random.PRNGKey(seed)
         u = self._latent.sample(samples, rngkey)
         # take the inverse back to the data distribution
-        x = self._bijector.inverse(params, u, c)[0]
+        x = self._inverse(params, u, conditions=c)[0]
         return x

@@ -1,31 +1,32 @@
 """Define the latent distributions used in the normalizing flows."""
 
 from abc import ABC, abstractmethod
+from .typing import Array
 from typing import Any
 import jax.numpy as jnp
 from jax import random
 from jax.scipy.stats import multivariate_normal
 
 
-class LatentDist(ABC):
+class Distribution(ABC):
     """Base class for latent distributions."""
 
-    input_dim: int = 0
+    x_dim: int = 0
 
-    def init(self, X: jnp.ndarray):
-        self.input_dim = X.shape[1]
-        assert self.input_dim > 0
+    def init(self, x: Array):
+        self.x_dim = x.shape[1]
+        assert self.x_dim > 0
 
     @abstractmethod
-    def log_prob(self, X: jnp.ndarray) -> jnp.ndarray:
+    def log_prob(self, X: Array) -> Array:
         """Calculate log-probability of the inputs."""
 
     @abstractmethod
-    def sample(self, nsamples: int, seed: int = None) -> jnp.ndarray:
+    def sample(self, nsamples: int, seed: int = None) -> Array:
         """Sample from the distribution."""
 
 
-class Normal(LatentDist):
+class Normal(Distribution):
     """
     A multivariate Gaussian distribution with mean zero and unit variance.
 
@@ -36,19 +37,19 @@ class Normal(LatentDist):
     draw Gaussian samples outside the support of the splines.
     """
 
-    def init(self, X: jnp.ndarray) -> None:
-        super().init(X)
-        self._mean = jnp.zeros(self.input_dim)
-        self._cov = jnp.identity(self.input_dim)
+    def init(self, x: Array) -> None:
+        super().init(x)
+        self._mean = jnp.zeros(self.x_dim)
+        self._cov = jnp.identity(self.x_dim)
 
-    def log_prob(self, X: jnp.ndarray) -> jnp.ndarray:
+    def log_prob(self, X: Array) -> Array:
         return multivariate_normal.logpdf(
             X,
             mean=self._mean,
             cov=self._cov,
         )
 
-    def sample(self, nsamples: int, rngkey: Any = None) -> jnp.ndarray:
+    def sample(self, nsamples: int, rngkey: Any = None) -> Array:
         return random.multivariate_normal(
             key=rngkey,
             mean=self._mean,
@@ -57,7 +58,7 @@ class Normal(LatentDist):
         )
 
 
-class Uniform(LatentDist):
+class Uniform(Distribution):
     """A multivariate uniform distribution with support [-bound, bound]."""
 
     bound: float
@@ -65,23 +66,23 @@ class Uniform(LatentDist):
     def __init__(self, bound: float = 5) -> None:
         self.bound = bound
 
-    def log_prob(self, X: jnp.ndarray) -> jnp.ndarray:
+    def log_prob(self, X: Array) -> Array:
         # which inputs are inside the support of the distribution
         mask = jnp.prod((X >= -self.bound) & (X <= self.bound), axis=-1)
 
         # calculate log_prob
         log_prob = jnp.where(
             mask,
-            -self.input_dim * jnp.log(2 * self.bound),
+            -self.x_dim * jnp.log(2 * self.bound),
             -jnp.inf,
         )
 
         return log_prob
 
-    def sample(self, nsamples: int, rngkey: Any = None) -> jnp.ndarray:
+    def sample(self, nsamples: int, rngkey: Any = None) -> Array:
         samples = random.uniform(
             rngkey,
-            shape=(nsamples, self.input_dim),
+            shape=(nsamples, self.x_dim),
             minval=-self.bound,
             maxval=self.bound,
         )

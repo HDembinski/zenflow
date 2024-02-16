@@ -1,25 +1,28 @@
 """Define utility functions for use in other modules."""
 
-from typing import Tuple
+from typing import Tuple, Callable
 
 import jax.numpy as jnp
 from flax import linen as nn
 
 
-class DenseReluNetwork(nn.Module):
+class FeedForwardNetwork(nn.Module):
+    """Feed-forward network."""
+
     out_dim: int
-    hidden_layers: int
-    hidden_dim: int
+    depth: int
+    width: int
+    act: Callable = nn.leaky_relu
 
     @nn.compact
     def __call__(self, x):
-        for _ in range(self.hidden_layers):
-            x = nn.Dense(self.hidden_dim)(x)
-            x = nn.leaky_relu(x)
+        for _ in range(self.depth):
+            x = nn.Dense(self.width)(x)
+            x = self.act(x)
         return nn.Dense(self.out_dim)(x)
 
 
-def RationalQuadraticSpline(
+def rational_quadratic_spline(
     inputs: jnp.ndarray,
     W: jnp.ndarray,
     H: jnp.ndarray,
