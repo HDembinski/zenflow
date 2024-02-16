@@ -1,8 +1,9 @@
 """Train flow."""
 
 from .flow import Flow
+from .typing import Pytree, Array
 import jax.numpy as jnp
-from typing import Callable
+from typing import Tuple, List
 import numpy as np
 import jax
 import optax
@@ -10,17 +11,17 @@ import optax
 
 def train(
     flow: Flow,
-    X_train: jnp.ndarray,
-    C_train: jnp.ndarray,
-    X_test: jnp.ndarray,
-    C_test: jnp.ndarray,
+    X_train: Array,
+    C_train: Array,
+    X_test: Array,
+    C_test: Array,
     epochs: int = 100,
     batch_size: int = 1024,
-    optimizer: Callable = None,
+    optimizer: optax.GradientTransformation = optax.nadamw(learning_rate=1e-3),
     patience: int = 10,
     seed: int = 0,
     progress: bool = True,
-) -> list:
+) -> Tuple[Pytree, int, List[float], List[float]]:
     """Trains the normalizing flow on the provided inputs."""
     root_key = jax.random.PRNGKey(seed)
     init_key, batch_key = jax.random.split(root_key)
@@ -32,8 +33,7 @@ def train(
 
     params = flow.init(init_key, X_train, C_train)
 
-    tx = optax.adam(learning_rate=1e-3) if optimizer is None else optimizer
-    opt_state = tx.init(params)
+    opt_state = optimizer.init(params)
 
     @jax.jit
     def loss_fn(params, x, c):

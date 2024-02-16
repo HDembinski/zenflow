@@ -27,10 +27,18 @@ where = ["src"]
 profile = "black"
 multi_line_output = 3
 
-[tool.ruff]
+[tool.ruff.lint]
 select = ["E", "F", "W", "D"]
 ignore = ["D212", "D203", "D107", "D102"]
 unfixable = ["ERA"]
+
+[tool.mypy]
+ignore_missing_imports = true
+allow_redefinition = true
+plugins = "numpy.typing.mypy_plugin"
+pretty = true
+files = ["src"]
+no_implicit_optional = false
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules --strict-config --strict-markers -q -ra --ff"

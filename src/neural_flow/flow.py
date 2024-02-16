@@ -67,6 +67,7 @@ class Flow:
         -------
         Array
             Device array of shape (inputs.shape[0],).
+
         """
         c = self._c_standardize(c)
         u, log_det = self.bijector.forward(params, x, c)

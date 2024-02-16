@@ -70,6 +70,7 @@ def rational_quadratic_spline(
     [2] Rezende, Danilo Jimenez et al.
         Normalizing Flows on Tori and Spheres. arxiv:2002.02428, 2020
         http://arxiv.org/abs/2002.02428
+
     """
     # knot x-positions
     xk = jnp.pad(

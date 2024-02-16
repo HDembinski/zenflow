@@ -1,6 +1,6 @@
 """Define the bijectors used in the normalizing flows."""
 
-from typing import Tuple, Callable
+from typing import Tuple, Callable, List
 from .typing import Array, Pytree
 from abc import ABC, abstractmethod
 import jax
@@ -38,12 +38,12 @@ class ShiftBounds(Bijector):
         self.xscale = 2 * self.bound / (xmax - xmin)
         return ()
 
-    def forward(self, params, x: Array, c: Array) -> Tuple[Array, Array]:
+    def forward(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
         y = (x - self.xmean) * self.xscale
         log_det = jnp.sum(jnp.log(self.xscale)) * jnp.ones(x.shape[0])
         return y, log_det
 
-    def inverse(self, params, x: Array, c: Array) -> Tuple[Array, Array]:
+    def inverse(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
         y = x / self.xscale + self.xmean
         log_det = -jnp.sum(jnp.log(self.xscale)) * jnp.ones(x.shape[0])
         return y, log_det
@@ -185,7 +185,7 @@ class RollingSplineCoupling(Chain):
 
     def init(self, rngkey: Array, x: Array, c: Array) -> Pytree:
         input_dim = x.shape[1]
-        bijectors = []
+        bijectors: List[Bijector] = []
         for j in range(input_dim):
             bijectors.append(
                 NeuralSplineCoupling(
