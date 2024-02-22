@@ -27,13 +27,7 @@ class SplineNetwork(nn.Module):
 
 
 def rational_quadratic_spline(
-    inputs: Array,
-    W: Array,
-    H: Array,
-    D: Array,
-    B: float,
-    inverse: bool,
-    periodic: bool,
+    inputs: Array, W: Array, H: Array, D: Array, B: float, periodic: bool, inverse: bool
 ) -> Tuple[Array, Optional[Array]]:
     """
     Apply rational quadratic spline to inputs and return outputs with log_det.
@@ -53,11 +47,11 @@ def rational_quadratic_spline(
     B : float
         Range of the splines.
         Outside of (-B,B), the transformation is just the identity.
+    periodic : bool; default=False
+        Whether to make this a periodic, Circular Spline [2].
     inverse : bool
         If True, perform the inverse transformation.
         Otherwise perform the forward transformation.
-    periodic : bool; default=False
-        Whether to make this a periodic, Circular Spline [2].
 
     Returns
     -------
