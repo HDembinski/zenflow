@@ -17,9 +17,11 @@ class SplineNetwork(nn.Module):
     def __call__(self, x: Array, train: bool):
         x = nn.BatchNorm(use_running_average=not train)(x)
         for width in self.layers:
-            x = nn.Dense(width, 
-                         kernel_init=nn.initializers.zeros_init(),
-                         bias_init=nn.initializers.zeros_init())(x)
+            x = nn.Dense(
+                width,
+                kernel_init=nn.initializers.zeros_init(),
+                bias_init=nn.initializers.zeros_init(),
+            )(x)
             x = self.act(x)
         return nn.Dense(self.out_dim)(x)
 
@@ -31,7 +33,7 @@ def rational_quadratic_spline(
     D: Array,
     B: float,
     inverse: bool,
-    periodic: bool = False,
+    periodic: bool,
 ) -> Tuple[Array, Optional[Array]]:
     """
     Apply rational quadratic spline to inputs and return outputs with log_det.

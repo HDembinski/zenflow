@@ -41,13 +41,20 @@ def train(
 
     @jax.jit
     def loss_fn(params, batch_stats, x, c, train):
-        lp, updates = flow.log_prob({"params": params, "batch_stats": batch_stats},
-            x, c, train=train, mutable=["batch_stats"])
+        lp, updates = flow(
+            {"params": params, "batch_stats": batch_stats},
+            x,
+            c,
+            train=train,
+            mutable=["batch_stats"],
+        )
         return -jnp.mean(lp).item(), updates
 
     @jax.jit
     def step(params, batch_stats, opt_state, x, c):
-        gradients, updates = jax.grad(loss_fn, with_aux=True)(params, batch_stats, x, c, True)
+        gradients, updates = jax.grad(loss_fn, with_aux=True)(
+            params, batch_stats, x, c, True
+        )
         batch_stats = updates["batch_stats"]
         updates, opt_state = optimizer.update(gradients, opt_state, params)
         params = optax.apply_updates(params, updates)
@@ -89,10 +96,11 @@ def train(
             best_params = {"params": params, "batch_stats": batch_stats}
 
         stop = np.isnan(loss_train[-1])
-        
+
         if epoch >= 2 * patience and epoch % patience == 0:
-            stop |= (not np.min(loss_test[-patience:])
-            < np.min(loss_test[-2 * patience : -patience]))
+            stop |= not np.min(loss_test[-patience:]) < np.min(
+                loss_test[-2 * patience : -patience]
+            )
 
         if stop:
             break
