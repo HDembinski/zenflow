@@ -1,36 +1,38 @@
 """Define utility functions for use in other modules."""
 
-from typing import Tuple, Callable
-
+from typing import Tuple, Callable, Optional, Sequence
+from .typing import Array
 import jax.numpy as jnp
 from flax import linen as nn
 
 
-class FeedForwardNetwork(nn.Module):
+class SplineNetwork(nn.Module):
     """Feed-forward network."""
 
     out_dim: int
-    depth: int
-    width: int
+    layers: Sequence[int]
     act: Callable = nn.leaky_relu
 
     @nn.compact
-    def __call__(self, x):
-        for _ in range(self.depth):
-            x = nn.Dense(self.width)(x)
+    def __call__(self, x: Array, train: bool):
+        x = nn.BatchNorm(use_running_average=not train)(x)
+        for width in self.layers:
+            x = nn.Dense(width, 
+                         kernel_init=nn.initializers.zeros_init(),
+                         bias_init=nn.initializers.zeros_init())(x)
             x = self.act(x)
         return nn.Dense(self.out_dim)(x)
 
 
 def rational_quadratic_spline(
-    inputs: jnp.ndarray,
-    W: jnp.ndarray,
-    H: jnp.ndarray,
-    D: jnp.ndarray,
+    inputs: Array,
+    W: Array,
+    H: Array,
+    D: Array,
     B: float,
+    inverse: bool,
     periodic: bool = False,
-    inverse: bool = False,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> Tuple[Array, Optional[Array]]:
     """
     Apply rational quadratic spline to inputs and return outputs with log_det.
 
@@ -49,7 +51,7 @@ def rational_quadratic_spline(
     B : float
         Range of the splines.
         Outside of (-B,B), the transformation is just the identity.
-    inverse : bool; default=False
+    inverse : bool
         If True, perform the inverse transformation.
         Otherwise perform the forward transformation.
     periodic : bool; default=False
@@ -59,8 +61,9 @@ def rational_quadratic_spline(
     -------
     outputs : jnp.ndarray
         The result of applying the splines to the inputs.
-    log_det : jnp.ndarray
-        The log determinant of the Jacobian at the inputs.
+    log_det : jnp.ndarray or None
+        The log determinant of the Jacobian at the inputs. Only returned
+        if inverse=False.
 
     References
     ----------
@@ -140,21 +143,7 @@ def rational_quadratic_spline(
         if not periodic:
             outputs = jnp.where(out_of_bounds, inputs, outputs)
 
-        # [1] Appendix A.2
-        # calculate the log determinant
-        dnum = (
-            input_dkp1 * relx**2
-            + 2 * input_sk * relx * (1 - relx)
-            + input_dk * (1 - relx) ** 2
-        )
-        dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
-        log_det = 2 * jnp.log(input_sk) + jnp.log(dnum) - 2 * jnp.log(dden)
-        # if not periodic, replace log_det for out-of-bounds values = 0
-        if not periodic:
-            log_det = jnp.where(out_of_bounds, 0, log_det)
-        log_det = log_det.sum(axis=1)
-
-        return outputs, -log_det
+        return outputs, None
 
     else:
         # [1] Appendix A.1
@@ -182,19 +171,3 @@ def rational_quadratic_spline(
         log_det = log_det.sum(axis=1)
 
         return outputs, log_det
-
-
-def sub_diag_indices(
-    inputs: jnp.ndarray,
-) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Return indices for diagonal of 2D blocks in 3D array."""
-    if inputs.ndim != 3:
-        raise ValueError("Input must be a 3D array.")
-    nblocks = inputs.shape[0]
-    ndiag = min(inputs.shape[1], inputs.shape[2])
-    idx = (
-        jnp.repeat(jnp.arange(nblocks), ndiag),
-        jnp.tile(jnp.arange(ndiag), nblocks),
-        jnp.tile(jnp.arange(ndiag), nblocks),
-    )
-    return idx

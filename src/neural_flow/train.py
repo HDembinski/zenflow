@@ -24,7 +24,7 @@ def train(
 ) -> Tuple[Pytree, int, List[float], List[float]]:
     """Trains the normalizing flow on the provided inputs."""
     root_key = jax.random.PRNGKey(seed)
-    init_key, batch_key = jax.random.split(root_key)
+    init_key, iter_key = jax.random.split(root_key)
 
     X_train = jax.device_put(X_train)
     X_test = jax.device_put(X_test)
@@ -33,20 +33,25 @@ def train(
     if C_test is not None:
         C_test = jax.device_put(C_test)
 
-    params = flow.init(init_key, X_train, C_train)
+    variables = flow.init(init_key, X_train, C_train)
+    params = variables["params"]
+    batch_stats = variables["batch_stats"]
 
     opt_state = optimizer.init(params)
 
     @jax.jit
-    def loss_fn(params, x, c):
-        return -jnp.mean(flow.log_prob(params, x, c))
+    def loss_fn(params, batch_stats, x, c, train):
+        lp, updates = flow.log_prob({"params": params, "batch_stats": batch_stats},
+            x, c, train=train, mutable=["batch_stats"])
+        return -jnp.mean(lp).item(), updates
 
     @jax.jit
-    def step(params, opt_state, x, c):
-        gradients = jax.grad(loss_fn)(params, x, c)
+    def step(params, batch_stats, opt_state, x, c):
+        gradients, updates = jax.grad(loss_fn, with_aux=True)(params, batch_stats, x, c, True)
+        batch_stats = updates["batch_stats"]
         updates, opt_state = optimizer.update(gradients, opt_state, params)
         params = optax.apply_updates(params, updates)
-        return params, opt_state
+        return params, batch_stats, opt_state
 
     loss_train = []
     loss_test = []
@@ -59,9 +64,9 @@ def train(
         loop = range(epochs)
 
     best_epoch = 0
-    best_params = params
+    best_params = variables
     for epoch in loop:
-        batch_key, permute_key = jax.random.split(batch_key)
+        permute_key = jax.random.fold_in(iter_key, epoch)
         perm = jax.random.permutation(permute_key, X_train.shape[0])
         X_perm = X_train[perm]
         if C_train is not None:
@@ -74,20 +79,20 @@ def train(
                 C = C_perm[batch_idx : batch_idx + batch_size]
             else:
                 C = None
-            params, opt_state = step(params, opt_state, X, C)
+            params, batch_stats, opt_state = step(params, batch_stats, opt_state, X, C)
 
-        loss_train.append(loss_fn(params, X, C).item())
-        loss_test.append(loss_fn(params, X_test, C_test).item())
+        loss_train.append(loss_fn(params, batch_stats, X, C, False)[0])
+        loss_test.append(loss_fn(params, batch_stats, X_test, C_test, False)[0])
 
         if loss_test[-1] < loss_test[best_epoch]:
             best_epoch = epoch
-            best_params = params
+            best_params = {"params": params, "batch_stats": batch_stats}
 
-        stop = np.isnan(loss_train[-1]) or (
-            len(loss_test) > 2 * patience
-            and not np.min(loss_test[-patience:])
-            < np.min(loss_test[-2 * patience : -patience])
-        )
+        stop = np.isnan(loss_train[-1])
+        
+        if epoch >= 2 * patience and epoch % patience == 0:
+            stop |= (not np.min(loss_test[-patience:])
+            < np.min(loss_test[-2 * patience : -patience]))
 
         if stop:
             break

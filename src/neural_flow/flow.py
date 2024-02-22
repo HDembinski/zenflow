@@ -58,10 +58,7 @@ class Flow:
         self.latent.init(x)
         return self.bijector.init(rngkey, x, c)
 
-    def _c_standardize(self, c: Array) -> Array:
-        return (c - self._c_mean) * self._c_scale
-
-    def log_prob(self, params: Pytree, x: Array, c: Optional[Array]) -> Array:
+    def log_prob(self, params: Pytree, x: Array, c: Optional[Array], **kwargs) -> Tuple[Array, Pytree]:
         """
         Calculate log probability density of inputs.
 
@@ -81,12 +78,11 @@ class Flow:
 
         """
         x, c = self._normalize(x, c)
-        c = self._c_standardize(c)
-        u, log_det = self.bijector.forward(params, x, c)
+        u, log_det, updates = self.bijector.forward(params, x, c, **kwargs)
         log_prob = self.latent.log_prob(u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)
         log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
-        return log_prob
+        return log_prob, updates
 
     def sample(
         self,
@@ -103,12 +99,11 @@ class Flow:
             if self.c_dim == 0:
                 raise ValueError("Second argument must be number of samples")
             size = conditions_or_size.shape[0]
-            c = self._c_standardize(conditions_or_size)
         if jnp.ndim(c) < 2:
             c = c.reshape(-1, 1)
         if c.shape[1] != self.c_dim:
             msg = f"Number of conditions must be {self.c_dim}, got {c.shape[1]}"
             raise ValueError(msg)
         u = self.latent.sample(size, jax.random.PRNGKey(seed))
-        x = self.bijector.inverse(params, u, c)[0]
+        x = self.bijector.inverse(params, u, c)
         return x

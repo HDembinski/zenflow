@@ -1,13 +1,14 @@
 """Define the bijectors used in the normalizing flows."""
 
-from typing import Tuple, Callable, List
+from typing import Tuple, Callable, List, Optional, Sequence
 from .typing import Array, Pytree
 from abc import ABC, abstractmethod
 import jax
 from jax import numpy as jnp
-from .utils import rational_quadratic_spline, FeedForwardNetwork
+from .utils import rational_quadratic_spline, SplineNetwork
 from jax.nn import softmax, softplus
 from flax import linen as nn
+
 
 __all__ = [
     "Bijector",
@@ -19,190 +20,150 @@ __all__ = [
 ]
 
 
-class Bijector(ABC):
+class Bijector(nn.Module, ABC):
     """Bijector base class."""
 
-    def init(self, rngkey: Array, x: Array, c: Array) -> Pytree:
-        return ()
-
     @abstractmethod
-    def forward(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
+    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
         return NotImplemented
 
     @abstractmethod
-    def inverse(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
+    def inverse(self, x: Array, c: Array) -> Array:
         return NotImplemented
+
+
+class Chain(Bijector):
+    """Chain of other bjiectors."""
+
+    bijectors: Sequence[Bijector]
+
+    @nn.compact
+    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
+        log_det = jnp.zeros(x.shape[0])
+        for bijector in self.bijectors:
+            x, ld = bijector(x, c, train)
+            log_det += ld
+        return x, log_det
+
+    def inverse(self, x: Array, c: Array) -> Array:
+        for bijector in self.bijectors[::-1]:
+            x = bijector.inverse(x, c)
+        return x
 
 
 class ShiftBounds(Bijector):
     """Shifts all values."""
 
-    def __init__(self, bound: float = 4.0):
-        self.bound = bound
+    xmin: Array
+    xmax: Array
+    bound: float = 4.0
 
-    def init(self, rngkey: Array, x: Array, c: Array) -> Pytree:
-        xmin = x.min(axis=0)
-        xmax = x.max(axis=0)
-        self.xmean = (xmax + xmin) / 2
-        self.xscale = 2 * self.bound / (xmax - xmin)
-        return ()
+    def setup(self):
+        self.xmean = (self.xmax + self.xmin) / 2
+        self.xscale = 2 * self.bound / (self.xmax - self.xmin)
 
-    def forward(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
+    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
         y = (x - self.xmean) * self.xscale
         log_det = jnp.sum(jnp.log(self.xscale)) * jnp.ones(x.shape[0])
         return y, log_det
 
-    def inverse(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
+    def inverse(self,  x: Array, c: Array) -> Array:
         y = x / self.xscale + self.xmean
-        log_det = -jnp.sum(jnp.log(self.xscale)) * jnp.ones(x.shape[0])
-        return y, log_det
+        return y
 
 
 class Roll(Bijector):
     """Roll inputs along their last column."""
 
-    def __init__(self, shift: int = 1):
-        self.shift = shift
+    shift: int = 1
 
-    def forward(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
+    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
         x = jnp.roll(x, shift=self.shift, axis=-1)
         log_det = jnp.zeros(x.shape[0])
         return x, log_det
 
-    def inverse(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
+    def inverse(self, x: Array, c: Array) -> Array:
         x = jnp.roll(x, shift=-self.shift, axis=-1)
-        log_det = jnp.zeros(x.shape[0])
-        return x, log_det
+        return x
 
 
 class NeuralSplineCoupling(Bijector):
     """Coupling layer bijection with rational quadratic splines."""
 
+    knots: int = 16
+    bound: float = 5
+    periodic: bool = False
+    layers: Sequence[int] = (128, 128)
+
+    @nn.nowrap
     @staticmethod
-    def make_default_network(out_dim):
-        return FeedForwardNetwork(out_dim, 2, 128)
+    def _split(x: Array):
+        x_dim = x.shape[1]
+        x_split = x_dim // 2
+        assert x_split > 0 and x_split < x_dim
+        lower = x[:, : x_split]
+        upper = x[:, x_split: ]
+        return lower, upper
 
-    def __init__(
-        self,
-        knots: int = 16,
-        bound: float = 5,
-        periodic: bool = False,
-        make_network: Callable[[int], nn.Module] = make_default_network,
-    ):
-        self.knots = knots
-        self.bound = bound
-        self.periodic = periodic
-        self.make_network = make_network
-
-    def init(self, rngkey: Array, x: Array, c: Array) -> Pytree:
-        self.input_dim = x.shape[1]
-        self.n_conditions = c.shape[1]
-
-        # variables that determine NN self.params
-        self.upper_dim = self.input_dim // 2
-        # variables self.transformed by the NN
-        self.lower_dim = self.input_dim - self.upper_dim
-
-        # create the neural network that will take in the upper dimensions and
-        # will return the spline parameters to transform the lower dimensions
-        self.network = self.make_network(
-            (3 * self.knots - 1 + int(self.periodic)) * self.lower_dim
-        )
-        return self.network.init(
-            rngkey, jnp.zeros((1, self.upper_dim + self.n_conditions))
-        )
-
-    # calculate spline parameters as a function of the upper variables
-    def spline_params(
-        self, params: Pytree, x: Array, c: Array
-    ) -> Tuple[Array, Array, Array]:
-        xc = jnp.hstack((x, c))[:, : self.upper_dim + self.n_conditions]
-        outputs = self.network.apply(params, xc)
-        outputs = jnp.reshape(
-            outputs, [-1, self.lower_dim, 3 * self.knots - 1 + int(self.periodic)]
-        )
-        W, H, D = jnp.split(outputs, [self.knots, 2 * self.knots], axis=2)
+    def _spline_params(
+        self, lower: Array, upper: Array, c: Array, train: bool
+    ) -> Tuple[Array, Array, Array, Pytree]:
+        # calculate spline parameters as a function of the upper variables
+        dim = lower.shape[1]
+        spline_dim = (3 * self.knots - 1 + int(self.periodic))
+        x = jnp.hstack((upper, c))
+        x = SplineNetwork(dim * spline_dim, self.layers)(x, train)
+        x = jnp.reshape(x, [-1, dim, spline_dim])
+        W, H, D = jnp.split(x, [self.knots, 2 * self.knots], axis=2)
         W = 2 * self.bound * softmax(W)
         H = 2 * self.bound * softmax(H)
         D = softplus(D)
         return W, H, D
 
     def _transform(
-        self, params: Pytree, x: Array, c: Array, inverse: bool
-    ) -> Tuple[Array, Array]:
-        # lower dimensions are transformed as function of upper dimensions
-        upper, lower = x[:, : self.upper_dim], x[:, self.upper_dim :]
-        # widths, heights, derivatives = function(upper dimensions)
-        W, H, D = self.spline_params(params, upper, c)
-        # transform the lower dimensions with the Rational Quadratic Spline
+        self, x: Array, c: Array, inverse: bool, train: bool
+    ) -> Tuple[Array, Optional[Array]]:
+        lower, upper = self._split(x)
+        W, H, D = self._spline_params(lower, upper, c, train)
         lower, log_det = rational_quadratic_spline(
             lower, W, H, D, self.bound, self.periodic, inverse=inverse
         )
-        y = jnp.hstack((upper, lower))
+        y = jnp.hstack((lower, upper))
         return y, log_det
 
-    def forward(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
-        return self._transform(params, x, c, False)
+    @nn.compact
+    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
+        return self._transform(x, c, False, train)
 
-    def inverse(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
-        return self._transform(params, x, c, True)
-
-
-class Chain(Bijector):
-    """Chain of other bjiectors."""
-
-    def __init__(self, *bijectors: Bijector):
-        self.bijectors = bijectors
-
-    def init(self, rngkey: Array, x: Array, c: Array) -> Pytree:
-        params = []
-        for bijector in self.bijectors:
-            rngkey, subkey = jax.random.split(rngkey)
-            param = bijector.init(subkey, x, c)
-            params.append(param)
-        return params
-
-    def forward(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
-        log_dets = jnp.zeros(x.shape[0])
-        for bijector, param in zip(self.bijectors, params):
-            x, log_det = bijector.forward(param, x, c)
-            log_dets += log_det
-        return x, log_dets
-
-    def inverse(self, params: Pytree, x: Array, c: Array) -> Tuple[Array, Array]:
-        log_dets = jnp.zeros(x.shape[0])
-        for bijector, param in zip(self.bijectors[::-1], params[::-1]):
-            x, log_det = bijector.inverse(param, x, c)
-            log_dets += log_det
-        return x, log_dets
+    def inverse(self, x: Array, c: Array) -> Array:
+        return self._transform(x, c, True, False)[0]
 
 
-class RollingSplineCoupling(Chain):
+class RollingSplineCoupling(Bijector):
     """Alternates between NeuralSplineCoupling and Roll."""
 
-    def __init__(
-        self,
-        knots: int = 16,
-        bound: float = 5,
-        periodic: bool = False,
-        make_network: Callable[
-            [int], nn.Module
-        ] = NeuralSplineCoupling.make_default_network,
-    ):
-        self.knotsnots = knots
-        self.bound = bound
-        self.periodic = periodic
-        self.make_network = make_network
+    repeat: int = 1
+    knots: int = 16
+    bound: float = 5
+    periodic: bool = False
+    layers: Sequence[int] = (128, 128)
 
-    def init(self, rngkey: Array, x: Array, c: Array) -> Pytree:
-        input_dim = x.shape[1]
-        bijectors: List[Bijector] = []
-        for j in range(input_dim):
-            bijectors.append(
-                NeuralSplineCoupling(
-                    self.knotsnots, self.bound, self.periodic, self.make_network
-                )
-            )
-            bijectors.append(Roll())
-        super().__init__(*bijectors)
-        return super().init(rngkey, x, c)
+    @nn.compact
+    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
+        if self.is_initializing:
+            self.bijections = []
+            for _ in range(self.repeat):
+                for _ in range(x.shape[1]):
+                    self.bijections.append(NeuralSplineCoupling(self.knots, self.bound, self.periodic, self.layers))
+                    self.bijections.append(Roll())
+
+        log_det = jnp.zeros(x.shape[0])
+        for bi in self.bijections:
+            x, ld = bi(x, c, train)
+            log_det += ld
+        return x, log_det
+    
+    def inverse(self, x:Array, c:Array) -> Array:
+        for bi in self.bijections[::-1]:
+            x = bi.inverse(x, c)
+        return x
