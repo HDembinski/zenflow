@@ -34,6 +34,7 @@ unfixable = ["ERA"]
 
 [tool.ruff.lint.extend-per-file-ignores]
 "*.ipynb" = ["D101", "D103"]
+"test_*.py" = ["D"]
 
 [tool.mypy]
 ignore_missing_imports = true

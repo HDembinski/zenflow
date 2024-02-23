@@ -22,10 +22,12 @@ class Flow(nn.Module):
     """A conditional normalizing flow."""
 
     latent: Distribution = Uniform()
-    bijector: Bijector = Chain(ShiftBounds(), RollingSplineCoupling())
+    bijector: Bijector = Chain([ShiftBounds(), RollingSplineCoupling()])
 
     @nn.compact
-    def __call__(self, x: Array, c: Optional[Array], train: bool) -> Tuple[Array]:
+    def __call__(
+        self, x: Array, c: Optional[Array], train: bool = False
+    ) -> Tuple[Array]:
         u, log_det = self.bijector(x, c, train)
         log_prob = self.latent.log_prob(u) + log_det
         # set NaN's to negative infinity (i.e. zero probability)

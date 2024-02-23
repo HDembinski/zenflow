@@ -24,7 +24,7 @@ class Bijector(nn.Module, ABC):
     """Bijector base class."""
 
     @abstractmethod
-    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
+    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
         return NotImplemented
 
     @abstractmethod
@@ -38,7 +38,7 @@ class Chain(Bijector):
     bijectors: Sequence[Bijector]
 
     @nn.compact
-    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
+    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
         log_det = jnp.zeros(x.shape[0])
         for bijector in self.bijectors:
             x, ld = bijector(x, c, train)
@@ -63,7 +63,7 @@ class ShiftBounds(Bijector):
         return xmean, xscale
 
     @nn.compact
-    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
+    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
         ra_min = self.variable(
             "batch_stats", "xmin", lambda s: jnp.full(s, np.inf), x.shape[1]
         )
@@ -88,8 +88,8 @@ class ShiftBounds(Bijector):
         return y, log_det
 
     def inverse(self, x: Array, c: Array) -> Array:
-        xmin = self.variable("batch_stats", "xmin").value
-        xmax = self.variable("batch_stats", "xmax").value
+        xmin = self.get_variable("batch_stats", "xmin")
+        xmax = self.get_variable("batch_stats", "xmax")
         xmean, xscale = self._compute_mean_scale(xmin, xmax)
 
         y = x / xscale + xmean
@@ -101,7 +101,7 @@ class Roll(Bijector):
 
     shift: int = 1
 
-    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
+    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
         x = jnp.roll(x, shift=self.shift, axis=-1)
         log_det = jnp.zeros(x.shape[0])
         return x, log_det
@@ -156,7 +156,7 @@ class NeuralSplineCoupling(Bijector):
         return y, log_det
 
     @nn.compact
-    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
+    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
         return self._transform(x, c, False, train)
 
     def inverse(self, x: Array, c: Array) -> Array:
@@ -173,25 +173,25 @@ class RollingSplineCoupling(Bijector):
     layers: Sequence[int] = (128, 128)
 
     @nn.compact
-    def __call__(self, x: Array, c: Array, train: bool) -> Tuple[Array, Array]:
-        if self.is_initializing:
-            self.bijections = []
+    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
+        if self.is_initializing():
+            self.bijectors = []
             for _ in range(self.repeat):
                 for _ in range(x.shape[1]):
-                    self.bijections.append(
+                    self.bijectors.append(
                         NeuralSplineCoupling(
                             self.knots, self.bound, self.periodic, self.layers
                         )
                     )
-                    self.bijections.append(Roll())
+                    self.bijectors.append(Roll())
 
         log_det = jnp.zeros(x.shape[0])
-        for bi in self.bijections:
+        for bi in self.bijectors:
             x, ld = bi(x, c, train)
             log_det += ld
         return x, log_det
 
     def inverse(self, x: Array, c: Array) -> Array:
-        for bi in self.bijections[::-1]:
+        for bi in self.bijectors[::-1]:
             x = bi.inverse(x, c)
         return x

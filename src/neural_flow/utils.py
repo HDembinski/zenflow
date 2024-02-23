@@ -14,7 +14,7 @@ class SplineNetwork(nn.Module):
     act: Callable = nn.leaky_relu
 
     @nn.compact
-    def __call__(self, x: Array, train: bool):
+    def __call__(self, x: Array, train: bool = False):
         x = nn.BatchNorm(use_running_average=not train)(x)
         for width in self.layers:
             x = nn.Dense(
@@ -23,7 +23,11 @@ class SplineNetwork(nn.Module):
                 bias_init=nn.initializers.zeros_init(),
             )(x)
             x = self.act(x)
-        return nn.Dense(self.out_dim)(x)
+        return nn.Dense(
+            self.out_dim,
+            kernel_init=nn.initializers.zeros_init(),
+            bias_init=nn.initializers.zeros_init(),
+        )(x)
 
 
 def rational_quadratic_spline(
