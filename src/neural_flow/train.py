@@ -40,21 +40,24 @@ def train(
     opt_state = optimizer.init(params)
 
     @jax.jit
-    def loss_fn(params, batch_stats, x, c, train):
-        lp, updates = flow(
+    def loss_fn(params, batch_stats, x, c):
+        lp, updates = flow.apply(
             {"params": params, "batch_stats": batch_stats},
             x,
             c,
-            train=train,
+            train=True,
             mutable=["batch_stats"],
         )
-        return -jnp.mean(lp).item(), updates
+        return -jnp.mean(lp), updates
+
+    @jax.jit
+    def metric_fn(variables, x, c):
+        lp = flow.apply(variables, x, c)
+        return -jnp.mean(lp)
 
     @jax.jit
     def step(params, batch_stats, opt_state, x, c):
-        gradients, updates = jax.grad(loss_fn, with_aux=True)(
-            params, batch_stats, x, c, True
-        )
+        gradients, updates = jax.grad(loss_fn, has_aux=True)(params, batch_stats, x, c)
         batch_stats = updates["batch_stats"]
         updates, opt_state = optimizer.update(gradients, opt_state, params)
         params = optax.apply_updates(params, updates)
@@ -71,7 +74,7 @@ def train(
         loop = range(epochs)
 
     best_epoch = 0
-    best_params = variables
+    best_variables = variables
     for epoch in loop:
         permute_key = jax.random.fold_in(iter_key, epoch)
         perm = jax.random.permutation(permute_key, X_train.shape[0])
@@ -88,12 +91,13 @@ def train(
                 C = None
             params, batch_stats, opt_state = step(params, batch_stats, opt_state, X, C)
 
-        loss_train.append(loss_fn(params, batch_stats, X, C, False)[0])
-        loss_test.append(loss_fn(params, batch_stats, X_test, C_test, False)[0])
+        variables = {"params": params, "batch_stats": batch_stats}
+        loss_train.append(metric_fn(variables, X, C).item())
+        loss_test.append(metric_fn(variables, X_test, C_test).item())
 
         if loss_test[-1] < loss_test[best_epoch]:
             best_epoch = epoch
-            best_params = {"params": params, "batch_stats": batch_stats}
+            best_variables = variables
 
         stop = np.isnan(loss_train[-1])
 
@@ -105,4 +109,4 @@ def train(
         if stop:
             break
 
-    return best_params, best_epoch, loss_train, loss_test
+    return best_variables, best_epoch, loss_train, loss_test

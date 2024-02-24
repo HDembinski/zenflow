@@ -30,6 +30,14 @@ class SplineNetwork(nn.Module):
         )(x)
 
 
+def normalize_spline_slopes(D: Array, min_slope: float = 1e-4) -> Array:
+    """Normalize spline slopes so that D = 0 is mapped to 1."""
+    assert min_slope > 0 and min_slope < 1
+    min_slope = jnp.array(min_slope, dtype=D.dtype)
+    offset = jnp.log(jnp.exp(1.0 - min_slope) - 1.0)
+    return nn.softplus(D + offset) + min_slope
+
+
 def rational_quadratic_spline(
     inputs: Array, W: Array, H: Array, D: Array, B: float, periodic: bool, inverse: bool
 ) -> Tuple[Array, Optional[Array]]:
@@ -62,8 +70,8 @@ def rational_quadratic_spline(
     outputs : jnp.ndarray
         The result of applying the splines to the inputs.
     log_det : jnp.ndarray or None
-        The log determinant of the Jacobian at the inputs. Only returned
-        if inverse=False.
+        The log determinant of the Jacobian at the inputs or None if
+        if inverse=True.
 
     References
     ----------

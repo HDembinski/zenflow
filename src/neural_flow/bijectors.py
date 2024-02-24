@@ -4,8 +4,7 @@ from typing import Tuple, Optional, Sequence
 from .typing import Array
 from abc import ABC, abstractmethod
 from jax import numpy as jnp
-from .utils import rational_quadratic_spline, SplineNetwork
-from jax.nn import softmax, softplus
+from .utils import rational_quadratic_spline, SplineNetwork, normalize_spline_slopes
 from flax import linen as nn
 import numpy as np
 
@@ -139,9 +138,9 @@ class NeuralSplineCoupling(Bijector):
         x = SplineNetwork(dim * spline_dim, self.layers)(x, train)
         x = jnp.reshape(x, [-1, dim, spline_dim])
         W, H, D = jnp.split(x, [self.knots, 2 * self.knots], axis=2)
-        W = 2 * self.bound * softmax(W)
-        H = 2 * self.bound * softmax(H)
-        D = softplus(D)
+        W = 2 * self.bound * nn.softmax(W)
+        H = 2 * self.bound * nn.softmax(H)
+        D = normalize_spline_slopes(D)
         return W, H, D
 
     def _transform(
@@ -174,21 +173,15 @@ class RollingSplineCoupling(Bijector):
 
     @nn.compact
     def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
-        if self.is_initializing():
-            self.bijectors = []
-            for _ in range(self.repeat):
-                for _ in range(x.shape[1]):
-                    self.bijectors.append(
-                        NeuralSplineCoupling(
-                            self.knots, self.bound, self.periodic, self.layers
-                        )
-                    )
-                    self.bijectors.append(Roll())
-
         log_det = jnp.zeros(x.shape[0])
-        for bi in self.bijectors:
-            x, ld = bi(x, c, train)
-            log_det += ld
+        for _ in range(self.repeat):
+            for _ in range(x.shape[1]):
+                x, ld = NeuralSplineCoupling(
+                    self.knots, self.bound, self.periodic, self.layers
+                )(x, c, train)
+                log_det += ld
+                x, ld = Roll()(x, c, train)
+                log_det += ld
         return x, log_det
 
     def inverse(self, x: Array, c: Array) -> Array:
