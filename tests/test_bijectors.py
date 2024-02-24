@@ -61,10 +61,10 @@ def test_NeuralSplineCoupling():
     c = jnp.array([[1], [2], [3]])
     nsc = bi.NeuralSplineCoupling()
     variables = nsc.init(KEY, x, c)
-    (y, log_det), updates = nsc.apply(
-        variables, x, c, train=True, mutable=["batch_stats"]
-    )
+    (y, log_det) = nsc.apply(variables, x, c, train=False)
     assert_allclose(y, x)
+    x2 = nsc.apply(variables, y, c, method="inverse")
+    assert_allclose(x2, x)
 
 
 def test_RollingSplineCoupling():
@@ -72,9 +72,6 @@ def test_RollingSplineCoupling():
     c = jnp.array([[1], [2], [3]])
     rsc = bi.RollingSplineCoupling(layers=(4,))
     variables = rsc.init(KEY, x, c)
-    print(variables)
-    (y, log_det), updates = rsc.apply(
-        variables, x, c, train=False, mutable=["batch_stats"]
-    )
+    (y, log_det) = rsc.apply(variables, x, c, train=False)
     x2 = rsc.apply(variables, y, c, method="inverse")
     assert_allclose(x2, x)
