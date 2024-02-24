@@ -186,17 +186,26 @@ class RollingSplineCoupling(Bijector):
     layers: Sequence[int] = (128, 128)
 
     @nn.compact
+    def _bijectors(self, dim: int, train: bool):
+        bijectors = []
+        for _ in range(self.repeat):
+            for _ in range(dim):
+                bijectors.append(
+                    NeuralSplineCoupling(
+                        self.knots, self.bound, self.periodic, self.layers
+                    )
+                )
+                bijectors.append(Roll())
+        return bijectors
+
     def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
         log_det = jnp.zeros(x.shape[0])
-        for _ in range(self.repeat):
-            for _ in range(x.shape[1]):
-                x, ld = NeuralSplineCoupling(
-                    self.knots, self.bound, self.periodic, self.layers
-                )(x, c, train)
-                log_det += ld
-                x, ld = Roll()(x, c, train)
-                log_det += ld
+        for bi in self._bijectors(x.shape[1], train):
+            x, ld = bi(x, c, train)
+            log_det += ld
         return x, log_det
 
     def inverse(self, x: Array, c: Array) -> Array:
-        raise NotImplementedError
+        for bi in self._bijectors(x.shape[1], False)[::-1]:
+            x = bi.inverse(x, c)
+        return x

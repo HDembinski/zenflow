@@ -74,6 +74,7 @@ def test_RollingSplineCoupling():
     variables = rsc.init(KEY, x, c)
     print(variables)
     (y, log_det), updates = rsc.apply(
-        variables, x, c, train=True, mutable=["batch_stats"]
+        variables, x, c, train=False, mutable=["batch_stats"]
     )
-    assert_allclose(y, [[1.5, 2], [1, 3.5], [4.5, 6]])
+    x2 = rsc.apply(variables, y, c, method="inverse")
+    assert_allclose(x2, x)
