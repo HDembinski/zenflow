@@ -1,10 +1,10 @@
 """Define the bijectors used in the normalizing flows."""
 
-from typing import Tuple, Optional, Sequence
-from .typing import Array
+from typing import Tuple, Optional, Sequence, Callable
+from jaxtyping import Array
 from abc import ABC, abstractmethod
 from jax import numpy as jnp
-from .utils import rational_quadratic_spline, SplineNetwork, normalize_spline_slopes
+from .utils import rational_quadratic_spline
 from flax import linen as nn
 import numpy as np
 
@@ -15,6 +15,7 @@ __all__ = [
     "Roll",
     "NeuralSplineCoupling",
     "Chain",
+    "chain",
     "RollingSplineCoupling",
 ]
 
@@ -48,6 +49,11 @@ class Chain(Bijector):
         for bijector in self.bijectors[::-1]:
             x = bijector.inverse(x, c)
         return x
+
+
+def chain(*bijectors):
+    """Create chain from bijector arguments."""
+    return Chain(bijectors)
 
 
 class ShiftBounds(Bijector):
@@ -117,6 +123,7 @@ class NeuralSplineCoupling(Bijector):
     bound: float = 5
     periodic: bool = False
     layers: Sequence[int] = (128, 128)
+    act: Callable = nn.leaky_relu
 
     @nn.nowrap
     @staticmethod
@@ -128,6 +135,7 @@ class NeuralSplineCoupling(Bijector):
         upper = x[:, x_split:]
         return lower, upper
 
+    @nn.compact
     def _spline_params(
         self, lower: Array, upper: Array, c: Array, train: bool
     ) -> Tuple[Array, Array, Array]:
@@ -135,12 +143,19 @@ class NeuralSplineCoupling(Bijector):
         dim = lower.shape[1]
         spline_dim = 3 * self.knots - 1 + int(self.periodic)
         x = jnp.hstack((upper, c))
-        x = SplineNetwork(dim * spline_dim, self.layers)(x, train)
+
+        # feed forward network
+        x = nn.BatchNorm(use_running_average=not train)(x)
+        for width in self.layers:
+            x = nn.Dense(width)(x)
+            x = self.act(x)
+        x = nn.Dense(dim * spline_dim)(x)
         x = jnp.reshape(x, [-1, dim, spline_dim])
+
         W, H, D = jnp.split(x, [self.knots, 2 * self.knots], axis=2)
         W = 2 * self.bound * nn.softmax(W)
         H = 2 * self.bound * nn.softmax(H)
-        D = normalize_spline_slopes(D)
+        D = nn.softplus(D)
         return W, H, D
 
     def _transform(
@@ -154,7 +169,6 @@ class NeuralSplineCoupling(Bijector):
         y = jnp.hstack((lower, upper))
         return y, log_det
 
-    @nn.compact
     def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
         return self._transform(x, c, False, train)
 
@@ -185,6 +199,4 @@ class RollingSplineCoupling(Bijector):
         return x, log_det
 
     def inverse(self, x: Array, c: Array) -> Array:
-        for bi in self.bijectors[::-1]:
-            x = bi.inverse(x, c)
-        return x
+        raise NotImplementedError

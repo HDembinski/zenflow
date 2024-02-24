@@ -1,7 +1,7 @@
 """Train flow."""
 
 from .flow import Flow
-from .typing import Pytree, Array
+from jaxtyping import PyTree, Array
 import jax.numpy as jnp
 from typing import Tuple, List, Optional
 import numpy as np
@@ -21,7 +21,7 @@ def train(
     patience: int = 10,
     seed: int = 0,
     progress: bool = True,
-) -> Tuple[Pytree, int, List[float], List[float]]:
+) -> Tuple[PyTree, int, List[float], List[float]]:
     """Trains the normalizing flow on the provided inputs."""
     root_key = jax.random.PRNGKey(seed)
     init_key, iter_key = jax.random.split(root_key)
@@ -33,7 +33,9 @@ def train(
     if C_test is not None:
         C_test = jax.device_put(C_test)
 
-    variables = flow.init(init_key, X_train, C_train)
+    variables = flow.init(
+        init_key, X_train[:1], None if C_train is None else C_train[:1]
+    )
     params = variables["params"]
     batch_stats = variables["batch_stats"]
 
@@ -67,7 +69,10 @@ def train(
     loss_test = []
 
     if progress:
-        from rich.progress import track
+        try:
+            from tqdm.notebook import tqdm as track
+        except ModuleNotFoundError:
+            from rich.progress import track
 
         loop = track(range(epochs))
     else:

@@ -1,7 +1,7 @@
 """Define the Flow object that defines the normalizing flow."""
 
 from typing import Union, Optional, Tuple
-from .typing import Array, Pytree
+from jaxtyping import Array
 
 import jax.numpy as jnp
 import jax
@@ -9,9 +9,9 @@ import jax
 from .distributions import Distribution, Uniform
 from .bijectors import (
     Bijector,
-    Chain,
     RollingSplineCoupling,
     ShiftBounds,
+    chain,
 )
 from flax import linen as nn
 
@@ -21,8 +21,8 @@ __all__ = ["Flow"]
 class Flow(nn.Module):
     """A conditional normalizing flow."""
 
+    bijector: Bijector = chain(ShiftBounds(), RollingSplineCoupling())
     latent: Distribution = Uniform()
-    bijector: Bijector = Chain([ShiftBounds(), RollingSplineCoupling()])
 
     @nn.compact
     def __call__(
@@ -38,10 +38,8 @@ class Flow(nn.Module):
         log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
         return log_prob
 
-    @nn.nowrap
     def sample(
         self,
-        variables: Pytree,
         conditions_or_size: Union[Array, int],
         *,
         seed: int = 0,
@@ -52,8 +50,8 @@ class Flow(nn.Module):
         else:
             size = conditions_or_size.shape[0]
             c = conditions_or_size
-            if c.ndim() == 1:
+            if c.ndim == 1:
                 c = c.reshape(-1, 1)
         u = self.latent.sample(size, jax.random.PRNGKey(seed))
-        x = self.bijector.apply(variables, u, c, method="inverse")
+        x = self.bijector.inverse(u, c)
         return x

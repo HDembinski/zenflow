@@ -1,41 +1,8 @@
 """Define utility functions for use in other modules."""
 
-from typing import Tuple, Callable, Optional, Sequence
-from .typing import Array
+from typing import Tuple, Optional
+from jaxtyping import Array
 import jax.numpy as jnp
-from flax import linen as nn
-
-
-class SplineNetwork(nn.Module):
-    """Feed-forward network."""
-
-    out_dim: int
-    layers: Sequence[int]
-    act: Callable = nn.leaky_relu
-
-    @nn.compact
-    def __call__(self, x: Array, train: bool = False):
-        x = nn.BatchNorm(use_running_average=not train)(x)
-        for width in self.layers:
-            x = nn.Dense(
-                width,
-                kernel_init=nn.initializers.zeros_init(),
-                bias_init=nn.initializers.zeros_init(),
-            )(x)
-            x = self.act(x)
-        return nn.Dense(
-            self.out_dim,
-            kernel_init=nn.initializers.zeros_init(),
-            bias_init=nn.initializers.zeros_init(),
-        )(x)
-
-
-def normalize_spline_slopes(D: Array, min_slope: float = 1e-4) -> Array:
-    """Normalize spline slopes so that D = 0 is mapped to 1."""
-    assert min_slope > 0 and min_slope < 1
-    min_slope = jnp.array(min_slope, dtype=D.dtype)
-    offset = jnp.log(jnp.exp(1.0 - min_slope) - 1.0)
-    return nn.softplus(D + offset) + min_slope
 
 
 def rational_quadratic_spline(

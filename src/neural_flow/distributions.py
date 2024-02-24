@@ -1,7 +1,7 @@
 """Define the latent distributions used in the normalizing flows."""
 
 from abc import ABC, abstractmethod
-from .typing import Array
+from jaxtyping import Array
 import jax.numpy as jnp
 from jax import random
 from jax.scipy.stats import multivariate_normal

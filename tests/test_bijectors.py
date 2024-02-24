@@ -70,8 +70,9 @@ def test_NeuralSplineCoupling():
 def test_RollingSplineCoupling():
     x = jnp.array([[1.5, 2], [1, 3.5], [4.5, 6]])
     c = jnp.array([[1], [2], [3]])
-    rsc = bi.RollingSplineCoupling()
+    rsc = bi.RollingSplineCoupling(layers=(4,))
     variables = rsc.init(KEY, x, c)
+    print(variables)
     (y, log_det), updates = rsc.apply(
         variables, x, c, train=True, mutable=["batch_stats"]
     )
