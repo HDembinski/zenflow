@@ -47,12 +47,12 @@ def test_Chain_2():
     x = jnp.array([[2.5, 2, 3], [1, 3.5, 4.5], [4, 5, 6]])
     chain = bi.Chain([bi.ShiftBounds(), bi.Roll()])
     variables = chain.init(KEY, x, None)
-    (z, log_det), updates = chain.apply(
+    (y, log_det), updates = chain.apply(
         variables, x, None, train=True, mutable=["batch_stats"]
     )
-    assert_allclose(z, [[-4, 0, -4], [0, -4, 0], [4, 4, 4]])
+    assert_allclose(y, [[-4, 0, -4], [0, -4, 0], [4, 4, 4]])
     assert_allclose(log_det, jnp.full(3, 2.94), atol=1e-2)
-    x2 = chain.apply(updates, z, None, method="inverse")
+    x2 = chain.apply(updates, y, None, method="inverse")
     assert_allclose(x2, x)
 
 
