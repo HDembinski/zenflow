@@ -16,7 +16,7 @@ __all__ = [
     "NeuralSplineCoupling",
     "Chain",
     "chain",
-    "RollingSplineCoupling",
+    "rolling_spline_coupling",
 ]
 
 
@@ -176,36 +176,22 @@ class NeuralSplineCoupling(Bijector):
         return self._transform(x, c, True, False)[0]
 
 
-class RollingSplineCoupling(Bijector):
-    """Alternates between NeuralSplineCoupling and Roll."""
+def rolling_spline_coupling(
+    dim: int,
+    knots: int = 16,
+    layers: Sequence[int] = (128, 128),
+):
+    """
+    Create a rolling spline coupling chain of bijectors.
 
-    repeat: int = 1
-    knots: int = 16
-    bound: float = 5
-    periodic: bool = False
-    layers: Sequence[int] = (128, 128)
-
-    @nn.compact
-    def _bijectors(self, dim: int, train: bool):
-        bijectors = []
-        for _ in range(self.repeat):
-            for _ in range(dim):
-                bijectors.append(
-                    NeuralSplineCoupling(
-                        self.knots, self.bound, self.periodic, self.layers
-                    )
-                )
-                bijectors.append(Roll())
-        return bijectors
-
-    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
-        log_det = jnp.zeros(x.shape[0])
-        for bi in self._bijectors(x.shape[1], train):
-            x, ld = bi(x, c, train)
-            log_det += ld
-        return x, log_det
-
-    def inverse(self, x: Array, c: Array) -> Array:
-        for bi in self._bijectors(x.shape[1], False)[::-1]:
-            x = bi.inverse(x, c)
-        return x
+    The chain starts with ShiftBounds and then alternates between
+    NeuralSplineCoupling and Roll once for each dimension in the input.
+    The input must be at least two-dimensional.
+    """
+    if dim < 2:
+        raise ValueError("dim must be at least 2")
+    bijectors = [ShiftBounds()]
+    for _ in range(dim):
+        bijectors.append(NeuralSplineCoupling(knots=knots, layers=layers))
+        bijectors.append(Roll())
+    return Chain(bijectors)

@@ -7,12 +7,7 @@ import jax.numpy as jnp
 import jax
 
 from .distributions import Distribution, Uniform
-from .bijectors import (
-    Bijector,
-    RollingSplineCoupling,
-    ShiftBounds,
-    chain,
-)
+from .bijectors import Bijector
 from flax import linen as nn
 
 __all__ = ["Flow"]
@@ -21,7 +16,7 @@ __all__ = ["Flow"]
 class Flow(nn.Module):
     """A conditional normalizing flow."""
 
-    bijector: Bijector = chain(ShiftBounds(), RollingSplineCoupling())
+    bijector: Bijector
     latent: Distribution = Uniform()
 
     @nn.compact
