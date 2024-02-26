@@ -56,6 +56,25 @@ def test_Chain_2():
     assert_allclose(x2, x)
 
 
+def test_Chain_3():
+    x = jnp.array([[1.5, 2], [1, 3.5], [3.5, 4]])
+    c = jnp.array([[1.0], [2.0], [3.0]])
+    chain = bi.chain(
+        bi.ShiftBounds(),
+        bi.NeuralSplineCoupling(),
+        bi.Roll(),
+        bi.NeuralSplineCoupling(),
+    )
+    variables = chain.init(KEY, x, c)
+    (y, log_det), updates = chain.apply(
+        variables, x, c, train=True, mutable=["batch_stats"]
+    )
+    variables = {"params": variables["params"], "batch_stats": updates["batch_stats"]}
+    (y, log_det) = chain.apply(variables, x, c, train=False)
+    x2 = chain.apply(variables, y, c, method="inverse")
+    assert_allclose(x2, x, rtol=1e-5)
+
+
 def test_NeuralSplineCoupling():
     x = jnp.array([[1.5, 2], [1, 3.5], [3.5, 4]])
     c = jnp.array([[1.0], [2.0], [3.0]])
@@ -69,11 +88,12 @@ def test_NeuralSplineCoupling():
 def test_rolling_spline_coupling():
     x = jnp.array([[1.5, 2], [1, 3.5], [3.5, 4]])
     c = jnp.array([[1.0], [2.0], [3.0]])
-    rsc = bi.rolling_spline_coupling(x.shape[1], layers=(4,))
+    rsc = bi.rolling_spline_coupling(x.shape[1], layers=(64, 64))
     variables = rsc.init(KEY, x, c)
     (y, log_det), updates = rsc.apply(
         variables, x, c, train=True, mutable=["batch_stats"]
     )
     variables = {"params": variables["params"], "batch_stats": updates["batch_stats"]}
+    (y, log_det) = rsc.apply(variables, x, c, train=False)
     x2 = rsc.apply(variables, y, c, method="inverse")
     assert_allclose(x2, x, atol=1e-5)

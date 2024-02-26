@@ -191,7 +191,9 @@ def rolling_spline_coupling(
     if dim < 2:
         raise ValueError("dim must be at least 2")
     bijectors = [ShiftBounds()]
-    for _ in range(dim):
+    for _ in range(dim - 1):
         bijectors.append(NeuralSplineCoupling(knots=knots, layers=layers))
         bijectors.append(Roll())
+    bijectors.append(NeuralSplineCoupling(knots=knots, layers=layers))
+    # we can skip last Roll which is superfluous
     return Chain(bijectors)
