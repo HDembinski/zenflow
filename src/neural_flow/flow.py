@@ -29,7 +29,6 @@ class Flow(nn.Module):
             c = c.reshape(-1, 1)
         u, log_det = self.bijector(x, c, train)
         log_prob = self.latent.log_prob(u) + log_det
-        # set NaN's to negative infinity (i.e. zero probability)
         log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
         return log_prob
 
