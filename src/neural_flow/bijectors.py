@@ -121,9 +121,8 @@ class NeuralSplineCoupling(Bijector):
 
     knots: int = 16
     bound: float = 5
-    periodic: bool = False
     layers: Sequence[int] = (128, 128)
-    act: Callable = nn.leaky_relu
+    act: Callable = nn.swish
 
     @nn.nowrap
     @staticmethod
@@ -141,7 +140,7 @@ class NeuralSplineCoupling(Bijector):
     ) -> Tuple[Array, Array, Array]:
         # calculate spline parameters as a function of the upper variables
         dim = lower.shape[1]
-        spline_dim = 3 * self.knots - 1 + int(self.periodic)
+        spline_dim = 3 * self.knots - 1
         x = jnp.hstack((upper, c))
 
         # feed forward network
