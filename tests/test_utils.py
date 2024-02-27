@@ -27,7 +27,7 @@ def test_index():
                 if xk[0][j] <= xi < xk[0][j + 1]:
                     expected.append(j)
                     break
-    ind, oob = utils._index(x, xk)
+    ind, oob = utils._index(x, xk, 1)
     assert_allclose(ind[0, :, 0], expected)
 
 

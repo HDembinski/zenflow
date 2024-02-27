@@ -14,8 +14,8 @@ def _knots(dx, bound):
     )
 
 
-def _index(x, xk):
-    out_of_bounds = (x < -xk[..., 0]) | (x >= xk[..., -1])
+def _index(x, xk, bound):
+    out_of_bounds = (x < -bound) | (x >= bound)
     idx = jnp.sum(xk <= x[..., None], axis=-1)[..., None] - 1
     idx = jnp.clip(idx, 0, xk.shape[-1] - 1)
     return idx, out_of_bounds
@@ -78,7 +78,7 @@ def rational_quadratic_spline(
     # knot slopes
     sk = dy / dx
 
-    idx, out_of_bounds = _index(inputs, yk if inverse else xk)
+    idx, out_of_bounds = _index(inputs, yk if inverse else xk, bound)
 
     # get kx, ky, kyp1, kd, kdp1, kw, ks for the bin corresponding to each input
     input_xk = jnp.take_along_axis(xk, idx, -1)[..., 0]
