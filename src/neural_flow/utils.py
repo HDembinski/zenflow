@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 
 def rational_quadratic_spline(
-    inputs: Array, W: Array, H: Array, D: Array, B: float, periodic: bool, inverse: bool
+    inputs: Array, W: Array, H: Array, D: Array, B: float, inverse: bool
 ) -> Tuple[Array, Optional[Array]]:
     """
     Apply rational quadratic spline to inputs and return outputs with log_det.
@@ -26,8 +26,6 @@ def rational_quadratic_spline(
     B : float
         Range of the splines.
         Outside of (-B,B), the transformation is just the identity.
-    periodic : bool; default=False
-        Whether to make this a periodic, Circular Spline [2].
     inverse : bool
         If True, perform the inverse transformation.
         Otherwise perform the forward transformation.
@@ -65,15 +63,12 @@ def rational_quadratic_spline(
         constant_values=-B,
     )
     # knot derivatives
-    if periodic:
-        dk = jnp.pad(D, [(0, 0)] * (len(D.shape) - 1) + [(1, 0)], mode="wrap")
-    else:
-        dk = jnp.pad(
-            D,
-            [(0, 0)] * (len(D.shape) - 1) + [(1, 1)],
-            mode="constant",
-            constant_values=1,
-        )
+    dk = jnp.pad(
+        D,
+        [(0, 0)] * (len(D.shape) - 1) + [(1, 1)],
+        mode="constant",
+        constant_values=1,
+    )
     # knot slopes
     sk = H / W
 
@@ -114,12 +109,7 @@ def rational_quadratic_spline(
 
         relx = 2 * c / (-b - jnp.sqrt(b**2 - 4 * a * c))
         outputs = relx * input_wk + input_xk
-        # if not periodic, replace out-of-bounds values with original values
-        if not periodic:
-            outputs = jnp.where(out_of_bounds, inputs, outputs)
-
-        return outputs, None
-
+        log_det = None
     else:
         # [1] Appendix A.1
         # calculate spline
@@ -127,9 +117,6 @@ def rational_quadratic_spline(
         num = input_hk * (input_sk * relx**2 + input_dk * relx * (1 - relx))
         den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
         outputs = input_yk + num / den
-        # if not periodic, replace out-of-bounds values with original values
-        if not periodic:
-            outputs = jnp.where(out_of_bounds, inputs, outputs)
 
         # [1] Appendix A.2
         # calculate the log determinant
@@ -140,9 +127,10 @@ def rational_quadratic_spline(
         )
         dden = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
         log_det = 2 * jnp.log(input_sk) + jnp.log(dnum) - 2 * jnp.log(dden)
-        # if not periodic, replace log_det for out-of-bounds values = 0
-        if not periodic:
-            log_det = jnp.where(out_of_bounds, 0, log_det)
+        # replace log_det for out-of-bounds values = 0
+        log_det = jnp.where(out_of_bounds, 0, log_det)
         log_det = log_det.sum(axis=1)
 
-        return outputs, log_det
+    # replace out-of-bounds values with original values
+    outputs = jnp.where(out_of_bounds, inputs, outputs)
+    return outputs, log_det

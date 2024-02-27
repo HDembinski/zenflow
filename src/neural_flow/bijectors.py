@@ -149,21 +149,23 @@ class NeuralSplineCoupling(Bijector):
             x = nn.Dense(width)(x)
             x = self.act(x)
         x = nn.Dense(dim * spline_dim)(x)
-        x = jnp.reshape(x, [-1, dim, spline_dim])
+        x = jnp.reshape(x, [lower.shape[0], dim, spline_dim])
 
-        W, H, D = jnp.split(x, [self.knots, 2 * self.knots], axis=2)
-        W = 2 * self.bound * nn.softmax(W)
-        H = 2 * self.bound * nn.softmax(H)
-        D = nn.softplus(D)
-        return W, H, D
+        dx = x[..., : self.knots]
+        dy = x[..., self.knots : 2 * self.knots]
+        sl = x[..., 2 * self.knots :]
+        dx = 2 * self.bound * nn.softmax(dx)
+        dy = 2 * self.bound * nn.softmax(dy)
+        sl = nn.softplus(sl)
+        return dx, dy, sl
 
     def _transform(
         self, x: Array, c: Array, inverse: bool, train: bool
     ) -> Tuple[Array, Optional[Array]]:
         lower, upper = self._split(x)
-        W, H, D = self._spline_params(lower, upper, c, train)
+        dx, dy, sl = self._spline_params(lower, upper, c, train)
         lower, log_det = rational_quadratic_spline(
-            lower, W, H, D, self.bound, False, inverse
+            lower, dx, dy, sl, self.bound, inverse
         )
         y = jnp.hstack((lower, upper))
         return y, log_det

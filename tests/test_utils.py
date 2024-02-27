@@ -9,7 +9,7 @@ def test_rational_quadratic_spline():
     H = jnp.array([0.5, 0.5, 0.5, 0.5]).reshape(1, 1, -1)
     D = jnp.array([1.0, 1.0, 1.0]).reshape(1, 1, -1)
     B = 1.0
-    y, log_det = utils.rational_quadratic_spline(x, W, H, D, B, False, False)
+    y, log_det = utils.rational_quadratic_spline(x, W, H, D, B, False)
     assert_allclose(y, x)
 
 
