@@ -13,10 +13,26 @@ def test_rational_quadratic_spline():
     assert_allclose(y, x)
 
 
-# def test_index():
-#     x = jnp.linspace(-2, 2, 6).reshape(1, 6)
-#     xk = jnp.array([-1, 0, 1]).reshape(1, 3)
-#     i = _index(x, xk)
-#     print(i)
-#     assert i.shape == (1, 6)
-#     assert_allclose(i, [[0, 0, 1, 2, 2, 2]])
+def test_index():
+    x = jnp.array([-2, -1, -0.5, -0.1, 0.0, 0.1, 0.5, 1.0, 1.5]).reshape(1, -1)
+    xk = jnp.array([-1, 0, 1]).reshape(1, 3)
+    expected = []
+    for xi in x[0]:
+        if xi < xk[0][0]:
+            expected.append(0)
+        elif xk[0][-1] <= xi:
+            expected.append(2)
+        else:
+            for j in range(len(xk[0]) - 1):
+                if xk[0][j] <= xi < xk[0][j + 1]:
+                    expected.append(j)
+                    break
+    ind, oob = utils._index(x, xk)
+    assert_allclose(ind[0, :, 0], expected)
+
+
+def test_knots():
+    dx = jnp.array((0.5, 0.5, 0.5))
+    bound = jnp.sum(dx) / 2
+    xk = utils._knots(dx, bound)
+    assert_allclose(xk, [-0.75, -0.25, 0.25, 0.75])

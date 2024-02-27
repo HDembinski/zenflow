@@ -14,6 +14,13 @@ def _knots(dx, bound):
     )
 
 
+def _index(x, xk):
+    out_of_bounds = (x < -xk[..., 0]) | (x >= xk[..., -1])
+    idx = jnp.sum(xk <= x[..., None], axis=-1)[..., None] - 1
+    idx = jnp.clip(idx, 0, xk.shape[-1] - 1)
+    return idx, out_of_bounds
+
+
 def rational_quadratic_spline(
     inputs: Array, dx: Array, dy: Array, slope: Array, bound: float, inverse: bool
 ) -> Tuple[Array, Optional[Array]]:
@@ -61,7 +68,7 @@ def rational_quadratic_spline(
     xk = _knots(dx, bound)
     # knot y-positions
     yk = _knots(dy, bound)
-    # knot derivatives
+    # knot derivatives with boundary condition
     dk = jnp.pad(
         slope,
         [(0, 0)] * (len(slope.shape) - 1) + [(1, 1)],
@@ -71,40 +78,27 @@ def rational_quadratic_spline(
     # knot slopes
     sk = dy / dx
 
-    # if not periodic, out-of-bounds inputs will have identity applied
-    # if periodic, we map the input into the appropriate region inside
-    # the period. For now, we will pretend all inputs are periodic.
-    # This makes sure that out-of-bounds inputs don't cause problems
-    # with the spline, but for the non-periodic case, we will replace
-    # these with their original values at the end
-    out_of_bounds = (inputs <= -bound) | (inputs >= bound)
-    masked_inputs = jnp.where(out_of_bounds, jnp.abs(inputs) - bound, inputs)
-
-    # find bin for each input
-    if inverse:
-        idx = jnp.sum(yk <= masked_inputs[..., None], axis=-1)[..., None] - 1
-    else:
-        idx = jnp.sum(xk <= masked_inputs[..., None], axis=-1)[..., None] - 1
+    idx, out_of_bounds = _index(inputs, yk if inverse else xk)
 
     # get kx, ky, kyp1, kd, kdp1, kw, ks for the bin corresponding to each input
     input_xk = jnp.take_along_axis(xk, idx, -1)[..., 0]
     input_yk = jnp.take_along_axis(yk, idx, -1)[..., 0]
-    input_dk = jnp.take_along_axis(dk, idx, -1)[..., 0]
-    input_dkp1 = jnp.take_along_axis(dk, idx + 1, -1)[..., 0]
     input_dx = jnp.take_along_axis(dx, idx, -1)[..., 0]
     input_dy = jnp.take_along_axis(dy, idx, -1)[..., 0]
+    input_dk = jnp.take_along_axis(dk, idx, -1)[..., 0]
+    input_dkp1 = jnp.take_along_axis(dk, idx + 1, -1)[..., 0]
     input_sk = jnp.take_along_axis(sk, idx, -1)[..., 0]
 
     if inverse:
         # [1] Appendix A.3
         # quadratic formula coefficients
-        a = (input_dy) * (input_sk - input_dk) + (masked_inputs - input_yk) * (
+        a = (input_dy) * (input_sk - input_dk) + (inputs - input_yk) * (
             input_dkp1 + input_dk - 2 * input_sk
         )
-        b = (input_dy) * input_dk - (masked_inputs - input_yk) * (
+        b = (input_dy) * input_dk - (inputs - input_yk) * (
             input_dkp1 + input_dk - 2 * input_sk
         )
-        c = -input_sk * (masked_inputs - input_yk)
+        c = -input_sk * (inputs - input_yk)
 
         relx = 2 * c / (-b - jnp.sqrt(b**2 - 4 * a * c))
         outputs = relx * input_dx + input_xk
@@ -112,7 +106,7 @@ def rational_quadratic_spline(
     else:
         # [1] Appendix A.1
         # calculate spline
-        relx = (masked_inputs - input_xk) / input_dx
+        relx = (inputs - input_xk) / input_dx
         num = input_dy * (input_sk * relx**2 + input_dk * relx * (1 - relx))
         den = input_sk + (input_dkp1 + input_dk - 2 * input_sk) * relx * (1 - relx)
         outputs = input_yk + num / den
