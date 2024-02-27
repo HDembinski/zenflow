@@ -163,7 +163,7 @@ class NeuralSplineCoupling(Bijector):
         lower, upper = self._split(x)
         W, H, D = self._spline_params(lower, upper, c, train)
         lower, log_det = rational_quadratic_spline(
-            lower, W, H, D, self.bound, self.periodic, inverse
+            lower, W, H, D, self.bound, False, inverse
         )
         y = jnp.hstack((lower, upper))
         return y, log_det
