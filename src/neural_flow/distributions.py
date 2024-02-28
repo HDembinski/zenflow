@@ -1,4 +1,4 @@
-"""Define the latent distributions used in the normalizing flows."""
+"""Base distributions used in conditional normalizing flows."""
 
 from abc import ABC, abstractmethod
 from jaxtyping import Array
@@ -8,18 +8,37 @@ from jax.scipy.stats import multivariate_normal
 
 
 class Distribution(ABC):
-    """Base class for latent distributions."""
+    """
+    Distribution base class.
+
+    We use lazy initialization to cache some constants.
+    """
 
     def __init__(self):
         self.x_dim = 0
         self.is_initialized = False
 
     def lazy_init(self, x: Array):
+        """Initialize constant values which depend only on the input shape."""
         self.x_dim = x.shape[1]
         self.is_initialized = True
         return self.x_dim
 
     def log_prob(self, x: Array) -> Array:
+        """
+        Compute log-probability of the samples.
+
+        Parameters
+        ----------
+        x : Array of shape (N, D)
+            N samples from the D-dimensional distribution.
+
+        Returns
+        -------
+        log_prob : Array of shape (N,)
+            Log-probabilities of the samples.
+
+        """
         if not self.is_initialized:
             self.lazy_init(x)
         return self._log_prob_impl(x)
@@ -37,9 +56,6 @@ class Normal(Distribution):
 
     Note this distribution has infinite support, so it is not recommended that
     you use it with the spline coupling layers, which have compact support.
-    If you do use the two together, you should set the support of the spline
-    layers (using the spline parameter B) to be large enough that you rarely
-    draw Gaussian samples outside the support of the splines.
     """
 
     def lazy_init(self, x: Array):
