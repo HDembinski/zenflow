@@ -8,21 +8,9 @@ from jax.scipy.stats import multivariate_normal
 
 
 class Distribution(ABC):
-    """
-    Distribution base class.
+    """Distribution base class with infrastructure for lazy initialization."""
 
-    We use lazy initialization to cache some constants.
-    """
-
-    def __init__(self):
-        self.x_dim = 0
-        self.is_initialized = False
-
-    def lazy_init(self, x: Array):
-        """Initialize constant values which depend only on the input shape."""
-        self.x_dim = x.shape[1]
-        self.is_initialized = True
-        return self.x_dim
+    _initialized: bool = False
 
     def log_prob(self, x: Array) -> Array:
         """
@@ -39,9 +27,13 @@ class Distribution(ABC):
             Log-probabilities of the samples.
 
         """
-        if not self.is_initialized:
-            self.lazy_init(x)
+        if not self._initialized:
+            self._post_init(x.shape[-1])
+            self._initialized = True
         return self._log_prob_impl(x)
+
+    @abstractmethod
+    def _post_init(self, dim: int) -> None: ...
 
     @abstractmethod
     def _log_prob_impl(self, x: Array) -> Array: ...
@@ -58,8 +50,10 @@ class Normal(Distribution):
     you use it with the spline coupling layers, which have compact support.
     """
 
-    def lazy_init(self, x: Array):
-        dim = super().lazy_init(x)
+    _mean: Array
+    _cov: Array
+
+    def _post_init(self, dim: int) -> None:
         self._mean = jnp.zeros(dim)
         self._cov = jnp.identity(dim)
 
@@ -82,27 +76,29 @@ class Normal(Distribution):
 class Uniform(Distribution):
     """A multivariate uniform distribution with support [-bound, bound]."""
 
-    def __init__(self, bound: float = 5) -> None:
+    bound: float
+    _log_prob_const: float
+
+    def __init__(self, bound: float = 5):
         self.bound = bound
-        super().__init__()
+
+    def _post_init(self, dim: int) -> None:
+        self._dim = dim
+        self._log_prob_const = -dim * jnp.log(2 * self.bound)
 
     def _log_prob_impl(self, x: Array) -> Array:
         # which inputs are inside the support of the distribution
         mask = jnp.prod((x >= -self.bound) & (x <= self.bound), axis=-1)
-
-        # calculate log_prob
-        log_prob = jnp.where(
+        return jnp.where(
             mask,
-            -self.x_dim * jnp.log(2 * self.bound),
+            self._log_prob_const,
             -jnp.inf,
         )
-
-        return log_prob
 
     def sample(self, nsamples: int, rngkey: Array) -> Array:
         return random.uniform(
             rngkey,
-            shape=(nsamples, self.x_dim),
+            shape=(nsamples, self._dim),
             minval=-self.bound,
             maxval=self.bound,
         )
