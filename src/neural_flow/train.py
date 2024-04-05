@@ -8,6 +8,11 @@ import numpy as np
 import jax
 import optax
 
+if hasattr(optax, "nadamw"):
+    DEFAULT_OPTIMIZER = optax.nadamw
+else:
+    DEFAULT_OPTIMIZER = optax.adamw
+
 
 def train(
     flow: Flow,
@@ -17,7 +22,7 @@ def train(
     C_test: Optional[Array] = None,
     epochs: int = 100,
     batch_size: int = 1024,
-    optimizer: optax.GradientTransformation = optax.nadamw(learning_rate=1e-3),
+    optimizer: optax.GradientTransformation = DEFAULT_OPTIMIZER(learning_rate=1e-3),
     patience: int = 10,
     seed: int = 0,
     progress: bool = True,
