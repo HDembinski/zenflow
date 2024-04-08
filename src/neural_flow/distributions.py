@@ -4,13 +4,14 @@ from abc import ABC, abstractmethod
 from jaxtyping import Array
 import jax.numpy as jnp
 from jax import random
-from jax.scipy.stats import multivariate_normal
+from jax.scipy import stats
 
 
 class Distribution(ABC):
     """Distribution base class with infrastructure for lazy initialization."""
 
-    _initialized: bool = False
+    __dim: int
+    __initialized: bool = False
 
     def log_prob(self, x: Array) -> Array:
         """
@@ -27,13 +28,14 @@ class Distribution(ABC):
             Log-probabilities of the samples.
 
         """
-        if not self._initialized:
-            self._post_init(x.shape[-1])
-            self._initialized = True
+        if not self.__initialized:
+            self.__dim = x.shape[-1]
+            self.__initialized = True
         return self._log_prob_impl(x)
 
-    @abstractmethod
-    def _post_init(self, dim: int) -> None: ...
+    @property
+    def dim(self):
+        return self.__dim
 
     @abstractmethod
     def _log_prob_impl(self, x: Array) -> Array: ...
@@ -42,63 +44,103 @@ class Distribution(ABC):
     def sample(self, nsamples: int, rngkey: Array) -> Array: ...
 
 
+class BoundedDistribution(Distribution):
+    """Base class for bounded distributions."""
+
+    bound: float
+
+    def __init__(self, bound: float = 5.0):
+        self.bound = bound
+
+
 class Normal(Distribution):
     """
-    A multivariate Gaussian distribution with mean zero and unit variance.
+    Multivariate standard normal distribution.
 
     Note this distribution has infinite support, so it is not recommended that
     you use it with the spline coupling layers, which have compact support.
     """
 
-    _mean: Array
-    _cov: Array
+    def _log_prob_impl(self, x: Array) -> Array:
+        return jnp.sum(stats.norm.logpdf(x), axis=-1)
 
-    def _post_init(self, dim: int) -> None:
-        self._mean = jnp.zeros(dim)
-        self._cov = jnp.identity(dim)
+    def sample(self, nsamples: int, rngkey: Array) -> Array:
+        return random.normal(rngkey, shape=(nsamples, self.dim))
+
+
+class TruncatedNormal(BoundedDistribution):
+    """
+    Truncated multivariate standard normal distribution.
+
+    Along each dimension, it has support [-bound, bound].
+    """
 
     def _log_prob_impl(self, x: Array) -> Array:
-        return multivariate_normal.logpdf(
-            x,
-            mean=self._mean,
-            cov=self._cov,
+        return jnp.sum(stats.truncnorm.logpdf(x, -self.bound, self.bound), axis=-1)
+
+    def sample(self, nsamples: int, rngkey: Array) -> Array:
+        return random.truncated_normal(
+            rngkey, -self.bound, self.bound, shape=(nsamples, self.dim)
+        )
+
+
+class Beta(BoundedDistribution):
+    """
+    Shifted and scaled multivariate Beta distribution.
+
+    Along each dimension, it has support [-bound, bound].
+
+    The peakness parameter can be used to interpolate between a uniform and a normal
+    distribution.
+
+    It can be used as an alternative to the truncated normal.
+    """
+
+    peakness: float
+
+    def __init__(self, bound: float = 5, peakness: float = 10):
+        if peakness < 1:
+            raise ValueError("peakness must be at least 1")
+        self.peakness = peakness
+        super().__init__(bound)
+
+    def _log_prob_impl(self, x: Array) -> Array:
+        return jnp.sum(
+            stats.beta.logpdf(
+                x, self.peakness, self.peakness, loc=-self.bound, scale=2 * self.bound
+            ),
+            axis=-1,
         )
 
     def sample(self, nsamples: int, rngkey: Array) -> Array:
-        return random.multivariate_normal(
-            key=rngkey,
-            mean=self._mean,
-            cov=self._cov,
-            shape=(nsamples,),
+        return self.bound * (
+            2
+            * random.beta(
+                rngkey,
+                self.peakness,
+                self.peakness,
+                shape=(nsamples, self.dim),
+            )
+            - 1
         )
 
 
-class Uniform(Distribution):
-    """A multivariate uniform distribution with support [-bound, bound]."""
+class Uniform(BoundedDistribution):
+    """
+    Multivariate uniform distribution.
 
-    bound: float
-    _log_prob_const: float
-
-    def __init__(self, bound: float = 5.0):
-        self.bound = bound
-
-    def _post_init(self, dim: int) -> None:
-        self._dim = dim
-        self._log_prob_const = -dim * jnp.log(2 * self.bound)
+    Along each dimension, it has support [-bound, bound].
+    """
 
     def _log_prob_impl(self, x: Array) -> Array:
-        # which inputs are inside the support of the distribution
-        mask = jnp.prod((x >= -self.bound) & (x <= self.bound), axis=-1)
-        return jnp.where(
-            mask,
-            self._log_prob_const,
-            -jnp.inf,
+        return jnp.sum(
+            stats.uniform.logpdf(x, loc=-self.bound, scale=2 * self.bound), axis=-1
         )
 
     def sample(self, nsamples: int, rngkey: Array) -> Array:
         return random.uniform(
             rngkey,
-            shape=(nsamples, self._dim),
+            shape=(nsamples, self.dim),
             minval=-self.bound,
             maxval=self.bound,
         )
