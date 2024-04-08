@@ -79,7 +79,7 @@ class Uniform(Distribution):
     bound: float
     _log_prob_const: float
 
-    def __init__(self, bound: float = 5):
+    def __init__(self, bound: float = 5.0):
         self.bound = bound
 
     def _post_init(self, dim: int) -> None:

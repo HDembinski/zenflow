@@ -206,7 +206,7 @@ class NeuralSplineCoupling(Bijector):
     """
 
     knots: int = 16
-    bound: float = 5
+    bound: float = 5.0
     layers: Sequence[int] = (128, 128)
     act: Callable = nn.swish
 
