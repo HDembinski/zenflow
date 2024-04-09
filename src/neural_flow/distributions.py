@@ -43,22 +43,35 @@ class Distribution(ABC):
     @abstractmethod
     def sample(self, nsamples: int, rngkey: Array) -> Array: ...
 
+    def __repr__(self):
+        """Return string representation."""
+        return f"""{self.__class__.__name__}()"""
+
 
 class BoundedDistribution(Distribution):
-    """Base class for bounded distributions."""
+    """
+    Base class for bounded distributions.
+
+    Along each dimension, it has support [-bound, bound].
+    """
 
     bound: float
 
     def __init__(self, bound: float = 5.0):
         self.bound = bound
 
+    def __repr__(self):
+        """Return string representation."""
+        return f"""{self.__class__.__name__}(bound={self.bound})"""
+
 
 class Normal(Distribution):
     """
     Multivariate standard normal distribution.
 
-    Note this distribution has infinite support, so it is not recommended that
-    you use it with the spline coupling layers, which have compact support.
+    Warning: This distribution has infinite support. It is not recommended that
+    you use it with the spline coupling layers. Use TruncatedNormal or Beta
+    instead.
     """
 
     def _log_prob_impl(self, x: Array) -> Array:
@@ -90,15 +103,16 @@ class Beta(BoundedDistribution):
 
     Along each dimension, it has support [-bound, bound].
 
-    The peakness parameter can be used to interpolate between a uniform and a normal
-    distribution.
-
-    It can be used as an alternative to the truncated normal.
+    It is a drop-in alternative to TruncatedNormal. In contrast to the former, the
+    probability is exactly zero at the boundary. The peakness parameter can be used to
+    interpolate between a uniform and a normal distribution. The default value is chosen
+    so that the variance of the shifted and scaled Beta distribution is equal to a
+    standard normal distribution.
     """
 
     peakness: float
 
-    def __init__(self, bound: float = 5, peakness: float = 10):
+    def __init__(self, bound: float = 5.0, peakness: float = 12.0):
         if peakness < 1:
             raise ValueError("peakness must be at least 1")
         self.peakness = peakness
@@ -122,6 +136,14 @@ class Beta(BoundedDistribution):
                 shape=(nsamples, self.dim),
             )
             - 1
+        )
+
+    def __repr__(self):
+        """Return string representation."""
+        return (
+            f"{self.__class__.__name__}("
+            f"bound={self.bound}, "
+            f"peakness={self.peakness})"
         )
 
 

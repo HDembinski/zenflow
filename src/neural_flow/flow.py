@@ -6,7 +6,7 @@ from jaxtyping import Array
 import jax.numpy as jnp
 import jax
 
-from .distributions import Distribution, Uniform
+from .distributions import Distribution, Beta
 from .bijectors import Bijector
 from flax import linen as nn
 
@@ -17,7 +17,7 @@ class Flow(nn.Module):
     """A conditional normalizing flow."""
 
     bijector: Bijector
-    latent: Distribution = Uniform()
+    latent: Distribution = Beta()
 
     @nn.compact
     def __call__(
