@@ -1,9 +1,11 @@
-"""Define utility functions for use in other modules."""
+"""Utility functions used in other modules."""
 
 from typing import Tuple, Optional
 from jaxtyping import Array
 import jax.numpy as jnp
 from jax.nn import softmax
+
+__all__ = ["squareplus", "normalize_spline_params", "rational_quadratic_spline"]
 
 
 def squareplus(x: Array, b: float = 4) -> Array:

@@ -195,8 +195,8 @@ class NeuralSplineCoupling(Bijector):
     invertible. Couplings use the upper dimensions of the input sample and the
     conditional variables to transform the lower dimensions of the input sample.
 
-    The spline only transform values in a hypercube centered around zero with half-side
-    length `bound`. Values outside of the hypercube are not transformed.
+    The spline only transform values in a hypercube with side intervals [0, 1]. For
+    values outside of the hypercube the identity transform is applied.
 
     For a derivation, discussion, and more information, see:
 
@@ -290,5 +290,5 @@ def rolling_spline_coupling(
         bijectors.append(NeuralSplineCoupling(knots=knots, layers=layers))
         bijectors.append(Roll())
     bijectors.append(NeuralSplineCoupling(knots=knots, layers=layers))
-    # we can skip last Roll which is superfluous
+    # we can skip last Roll, latent distribution is invariant to Roll
     return Chain(bijectors)
