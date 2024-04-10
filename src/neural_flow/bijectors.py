@@ -1,10 +1,14 @@
 """Bijectors used in conditional normalizing flows."""
 
-from typing import Tuple, Optional, Sequence, Callable
+from typing import Tuple, Sequence, Callable
 from jaxtyping import Array
 from abc import ABC, abstractmethod
 from jax import numpy as jnp
-from .utils import rational_quadratic_spline, normalize_spline_params
+from .utils import (
+    normalize_spline_params,
+    rational_quadratic_spline_forward,
+    rational_quadratic_spline_inverse,
+)
 from flax import linen as nn
 import numpy as np
 
@@ -220,41 +224,45 @@ class NeuralSplineCoupling(Bijector):
 
     @nn.compact
     def _spline_params(
-        self, lower: Array, upper: Array, c: Array, train: bool
-    ) -> Tuple[Array, Array, Array]:
-        # calculate spline parameters as a function of the upper variables
-        dim = lower.shape[1]
-        spline_dim = 3 * self.knots - 1
-        x = jnp.hstack((upper, c))
+        self, x: Array, c: Array, train: bool
+    ) -> Tuple[Array, Array, Array, Array, Array]:
+        # xt are transformed conditionally based on values xc
+        xt, xc = self._split(x)
 
-        # feed forward network
+        dim = xt.shape[1]
+        spline_dim = 3 * self.knots - 1
+
+        # calculate spline parameters as a function of xc variables
+        # and external conditional variables c
+        x = jnp.hstack((xc, c))
         x = nn.BatchNorm(use_running_average=not train)(x)
         for width in self.layers:
             x = nn.Dense(width)(x)
             x = self.act(x)
         x = nn.Dense(dim * spline_dim)(x)
-        x = jnp.reshape(x, [lower.shape[0], dim, spline_dim])
+        x = x.reshape((xt.shape[0], dim, spline_dim))
 
-        return normalize_spline_params(
-            x[..., : self.knots],
-            x[..., self.knots : 2 * self.knots],
-            x[..., 2 * self.knots :],
+        return (
+            xt,
+            xc,
+            *normalize_spline_params(
+                x[..., : self.knots],
+                x[..., self.knots : 2 * self.knots],
+                x[..., 2 * self.knots :],
+            ),
         )
 
-    def _transform(
-        self, x: Array, c: Array, inverse: bool, train: bool
-    ) -> Tuple[Array, Optional[Array]]:
-        lower, upper = self._split(x)
-        dx, dy, sl = self._spline_params(lower, upper, c, train)
-        lower, log_det = rational_quadratic_spline(lower, dx, dy, sl, inverse)
-        y = jnp.hstack((lower, upper))
+    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
+        xt, xc, dx, dy, sl = self._spline_params(x, c, train)
+        yt, log_det = rational_quadratic_spline_forward(xt, dx, dy, sl)
+        y = jnp.hstack((yt, xc))
         return y, log_det
 
-    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
-        return self._transform(x, c, False, train)
-
-    def inverse(self, x: Array, c: Array) -> Array:
-        return self._transform(x, c, True, False)[0]
+    def inverse(self, y: Array, c: Array) -> Array:
+        yt, yc, dx, dy, sl = self._spline_params(y, c, False)
+        xt = rational_quadratic_spline_inverse(yt, dx, dy, sl)
+        x = jnp.hstack((xt, yc))
+        return x
 
 
 def rolling_spline_coupling(
