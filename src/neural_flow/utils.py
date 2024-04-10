@@ -3,26 +3,60 @@
 from typing import Tuple, Optional
 from jaxtyping import Array
 import jax.numpy as jnp
+from jax.nn import softmax
 
 
-def _knots(dx, bound):
+def squareplus(x: Array, b: float = 4) -> Array:
+    """Compute softplus-like activation."""
+    return 0.5 * (x + jnp.sqrt(jnp.square(x) + b))
+
+
+def _knots(dx):
     return jnp.pad(
-        -bound + jnp.cumsum(dx, axis=-1),
+        jnp.cumsum(dx, axis=-1),
         [(0, 0)] * (len(dx.shape) - 1) + [(1, 0)],
         mode="constant",
-        constant_values=-bound,
+        constant_values=0,
     )
 
 
-def _index(x, xk, bound):
-    out_of_bounds = (x < -bound) | (x >= bound)
+def _index(x, xk):
+    out_of_bounds = (x < 0) | (x >= 1)
     idx = jnp.sum(xk <= x[..., None], axis=-1)[..., None] - 1
     idx = jnp.clip(idx, 0, xk.shape[-1] - 1)
     return idx, out_of_bounds
 
 
+def normalize_spline_params(
+    dx: Array, dy: Array, sl: Array
+) -> Tuple[Array, Array, Array]:
+    """
+    Return normalised spline parameters.
+
+    Parameters
+    ----------
+    dx : Array
+        Step size parameters along x with range [-oo, oo].
+    dy : Array
+        Step size parameters along y with range [-oo, oo].
+    sl : Array
+        Slope parameters with range [-oo, oo].
+
+    Returns
+    -------
+    dx, dy, sl
+        Arrays with normalised parameters. Step sizes are positive and sum up to 1.
+        Slope parameters are in range [0, oo].
+
+    """
+    dx = softmax(dx)
+    dy = softmax(dy)
+    sl = squareplus(sl)
+    return dx, dy, sl
+
+
 def rational_quadratic_spline(
-    inputs: Array, dx: Array, dy: Array, slope: Array, bound: float, inverse: bool
+    inputs: Array, dx: Array, dy: Array, slope: Array, inverse: bool
 ) -> Tuple[Array, Optional[Array]]:
     """
     Apply rational quadratic spline to inputs and return outputs with log_det.
@@ -31,26 +65,25 @@ def rational_quadratic_spline(
 
     Parameters
     ----------
-    inputs : jnp.ndarray
-        The inputs to be transformed.
-    dx : jnp.ndarray
-        The widths of the spline bins.
-    dy : jnp.ndarray
-        The heights of the spline bins.
-    slope : jnp.ndarray
-        The derivatives of the inner spline knots.
-    bound : float
-        Range of the splines.
-        Outside of (-B,B), the transformation is just the identity.
+    inputs : Array of shape (M, N)
+        The inputs to be transformed. The inputs are transformed in the interval [0, 1].
+        Values outside of the interval are returned unchanged.
+    dx : Array of shape (M, N, K)
+        The widths of the spline bins. The values must be positive and sum to unity.
+    dy : Array of shape (M, N, K)
+        The heights of the spline bins. The values must be positive and sum to unity.
+    slope : Array of shape (M, N, K - 1)
+        The derivatives at the inner spline knots. The values must be in the interval
+        [0, oo].
     inverse : bool
         If True, perform the inverse transformation.
         Otherwise perform the forward transformation.
 
     Returns
     -------
-    outputs : jnp.ndarray
+    outputs : Array of shape (M, N)
         The result of applying the splines to the inputs.
-    log_det : jnp.ndarray or None
+    log_det : Array of shape (M, N)
         The log determinant of the Jacobian at the inputs or None if
         if inverse=True.
 
@@ -65,9 +98,9 @@ def rational_quadratic_spline(
 
     """
     # knot x-positions
-    xk = _knots(dx, bound)
+    xk = _knots(dx)
     # knot y-positions
-    yk = _knots(dy, bound)
+    yk = _knots(dy)
     # knot derivatives with boundary condition
     dk = jnp.pad(
         slope,
@@ -78,7 +111,7 @@ def rational_quadratic_spline(
     # knot slopes
     sk = dy / dx
 
-    idx, out_of_bounds = _index(inputs, yk if inverse else xk, bound)
+    idx, out_of_bounds = _index(inputs, yk if inverse else xk)
 
     # get kx, ky, kyp1, kd, kdp1, kw, ks for the bin corresponding to each input
     input_xk = jnp.take_along_axis(xk, idx, -1)[..., 0]

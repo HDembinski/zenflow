@@ -48,121 +48,80 @@ class Distribution(ABC):
         return f"""{self.__class__.__name__}()"""
 
 
-class BoundedDistribution(Distribution):
-    """
-    Base class for bounded distributions.
-
-    Along each dimension, it has support [-bound, bound].
-    """
-
-    bound: float
-
-    def __init__(self, bound: float = 5.0):
-        self.bound = bound
-
-    def __repr__(self):
-        """Return string representation."""
-        return f"""{self.__class__.__name__}(bound={self.bound})"""
-
-
 class Normal(Distribution):
     """
-    Multivariate standard normal distribution.
+    Multivariate normal distribution with mean 0.5 and standard deviation 0.1.
 
-    Warning: This distribution has infinite support. It is not recommended that
-    you use it with the spline coupling layers. Use TruncatedNormal or Beta
-    instead.
+    Warning: This distribution has infinite support. It is not recommended to use it
+    with spline coupling layers. Use :class:`TruncatedNormal` or :class:`Beta` instead.
     """
 
     def _log_prob_impl(self, x: Array) -> Array:
-        return jnp.sum(stats.norm.logpdf(x), axis=-1)
+        return jnp.sum(stats.norm.logpdf(x, loc=0.5, scale=0.1), axis=-1)
 
     def sample(self, nsamples: int, rngkey: Array) -> Array:
-        return random.normal(rngkey, shape=(nsamples, self.dim))
+        return 0.5 + 0.1 * random.normal(rngkey, shape=(nsamples, self.dim))
 
 
-class TruncatedNormal(BoundedDistribution):
+class TruncatedNormal(Distribution):
     """
-    Truncated multivariate standard normal distribution.
+    Like :class:`Normal`, but truncated to the interval [0, 1].
 
-    Along each dimension, it has support [-bound, bound].
+    The probability to have samples exactly at the boundary is small, but non-zero.
     """
 
     def _log_prob_impl(self, x: Array) -> Array:
-        return jnp.sum(stats.truncnorm.logpdf(x, -self.bound, self.bound), axis=-1)
+        return jnp.sum(stats.truncnorm.logpdf(x, -5, 5, loc=0.5, scale=0.1), axis=-1)
 
     def sample(self, nsamples: int, rngkey: Array) -> Array:
-        return random.truncated_normal(
-            rngkey, -self.bound, self.bound, shape=(nsamples, self.dim)
+        return 0.5 + 0.1 * random.truncated_normal(
+            rngkey, -5, 5, shape=(nsamples, self.dim)
         )
 
 
-class Beta(BoundedDistribution):
+class Beta(Distribution):
     """
-    Shifted and scaled multivariate Beta distribution.
+    Multivariate beta distribution.
 
-    Along each dimension, it has support [-bound, bound].
+    It is a drop-in alternative to :class:`TruncatedNormal`. In contrast to the former,
+    the probability is exactly zero at the boundary.
 
-    It is a drop-in alternative to TruncatedNormal. In contrast to the former, the
-    probability is exactly zero at the boundary. The peakness parameter can be used to
-    interpolate between a uniform and a normal distribution. The default value is chosen
-    so that the variance of the shifted and scaled Beta distribution is equal to a
-    standard normal distribution.
+    The peakness parameter can be used to interpolate between a uniform and a normal
+    distribution. The default value is chosen so that the variance is equal to
+    :class:`Normal`.
     """
 
     peakness: float
 
-    def __init__(self, bound: float = 5.0, peakness: float = 12.0):
+    def __init__(self, peakness: float = 12.0):
         if peakness < 1:
             raise ValueError("peakness must be at least 1")
         self.peakness = peakness
-        super().__init__(bound)
 
     def _log_prob_impl(self, x: Array) -> Array:
         return jnp.sum(
-            stats.beta.logpdf(
-                x, self.peakness, self.peakness, loc=-self.bound, scale=2 * self.bound
-            ),
+            stats.beta.logpdf(x, self.peakness, self.peakness),
             axis=-1,
         )
 
     def sample(self, nsamples: int, rngkey: Array) -> Array:
-        return self.bound * (
-            2
-            * random.beta(
-                rngkey,
-                self.peakness,
-                self.peakness,
-                shape=(nsamples, self.dim),
-            )
-            - 1
+        return random.beta(
+            rngkey,
+            self.peakness,
+            self.peakness,
+            shape=(nsamples, self.dim),
         )
 
     def __repr__(self):
         """Return string representation."""
-        return (
-            f"{self.__class__.__name__}("
-            f"bound={self.bound}, "
-            f"peakness={self.peakness})"
-        )
+        return f"{self.__class__.__name__}(peakness={self.peakness})"
 
 
-class Uniform(BoundedDistribution):
-    """
-    Multivariate uniform distribution.
-
-    Along each dimension, it has support [-bound, bound].
-    """
+class Uniform(Distribution):
+    """Multivariate uniform distribution."""
 
     def _log_prob_impl(self, x: Array) -> Array:
-        return jnp.sum(
-            stats.uniform.logpdf(x, loc=-self.bound, scale=2 * self.bound), axis=-1
-        )
+        return jnp.sum(stats.uniform.logpdf(x), axis=-1)
 
     def sample(self, nsamples: int, rngkey: Array) -> Array:
-        return random.uniform(
-            rngkey,
-            shape=(nsamples, self.dim),
-            minval=-self.bound,
-            maxval=self.bound,
-        )
+        return random.uniform(rngkey, shape=(nsamples, self.dim))

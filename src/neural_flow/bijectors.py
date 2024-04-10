@@ -4,7 +4,7 @@ from typing import Tuple, Optional, Sequence, Callable
 from jaxtyping import Array
 from abc import ABC, abstractmethod
 from jax import numpy as jnp
-from .utils import rational_quadratic_spline
+from .utils import rational_quadratic_spline, normalize_spline_params
 from flax import linen as nn
 import numpy as np
 
@@ -114,23 +114,19 @@ def chain(*bijectors):
 
 class ShiftBounds(Bijector):
     """
-    Shift all values to remain within a specified bound.
+    Shift all values into the interval [margin, 1 - margin].
 
     This bijector keeps track of the smallest and largest inputs along each dimension of
     the target distribution and applies an affine transformation so that all values are
-    inside a hypercube centered around with zero with a given half-side length `bound`.
+    inside a hypercube where each side starts at `margin` and ends at `1 - margin`.
 
     This transformation is necessary before applying the first NeuralSplineCoupling,
-    which only transforms samples within a given hypercube centered around zero.
+    which only transforms samples inside a hypercube with coordinates in the interval
+    (0, 1) along each dimension. A value margin > 0 guarantees that values are never
+    mapped to the boundary values, where the latent distribution may be exactly zero.
     """
 
-    bound: float = 4.0
-
-    @nn.nowrap
-    def _compute_mean_scale(self, xmin, xmax):
-        xmean = (xmax + xmin) / 2
-        xscale = 2 * self.bound / (xmax - xmin)
-        return xmean, xscale
+    margin: float = 0.1
 
     @nn.compact
     def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
@@ -151,19 +147,22 @@ class ShiftBounds(Bijector):
             xmin = ra_min.value
             xmax = ra_max.value
 
-        xmean, xscale = self._compute_mean_scale(xmin, xmax)
+        xscale = 1 / (xmax - xmin)
+        z = (x - xmin) * xscale
+        y = (1 - self.margin) * z + (1 - z) * self.margin
 
-        y = (x - xmean) * xscale
-        log_det = jnp.sum(jnp.log(xscale)) * jnp.ones(x.shape[0])
+        abs_deriv = (1 - 2 * self.margin) * xscale
+        log_det = jnp.sum(jnp.log(abs_deriv)) * jnp.ones(x.shape[0])
         return y, log_det
 
-    def inverse(self, x: Array, c: Array) -> Array:
+    def inverse(self, y: Array, c: Array) -> Array:
         xmin = self.get_variable("batch_stats", "xmin")
         xmax = self.get_variable("batch_stats", "xmax")
-        xmean, xscale = self._compute_mean_scale(xmin, xmax)
 
-        y = x / xscale + xmean
-        return y
+        z = (y - self.margin) / (1 - 2 * self.margin)
+        x = xmax * z + (1 - z) * xmin
+
+        return x
 
 
 class Roll(Bijector):
@@ -206,9 +205,8 @@ class NeuralSplineCoupling(Bijector):
     """
 
     knots: int = 16
-    bound: float = 5.0
     layers: Sequence[int] = (128, 128)
-    act: Callable = nn.swish
+    act: Callable[[Array], Array] = nn.swish
 
     @nn.nowrap
     @staticmethod
@@ -237,22 +235,18 @@ class NeuralSplineCoupling(Bijector):
         x = nn.Dense(dim * spline_dim)(x)
         x = jnp.reshape(x, [lower.shape[0], dim, spline_dim])
 
-        dx = x[..., : self.knots]
-        dy = x[..., self.knots : 2 * self.knots]
-        sl = x[..., 2 * self.knots :]
-        dx = 2 * self.bound * nn.softmax(dx)
-        dy = 2 * self.bound * nn.softmax(dy)
-        sl = nn.softplus(sl)
-        return dx, dy, sl
+        return normalize_spline_params(
+            x[..., : self.knots],
+            x[..., self.knots : 2 * self.knots],
+            x[..., 2 * self.knots :],
+        )
 
     def _transform(
         self, x: Array, c: Array, inverse: bool, train: bool
     ) -> Tuple[Array, Optional[Array]]:
         lower, upper = self._split(x)
         dx, dy, sl = self._spline_params(lower, upper, c, train)
-        lower, log_det = rational_quadratic_spline(
-            lower, dx, dy, sl, self.bound, inverse
-        )
+        lower, log_det = rational_quadratic_spline(lower, dx, dy, sl, inverse)
         y = jnp.hstack((lower, upper))
         return y, log_det
 
@@ -264,9 +258,7 @@ class NeuralSplineCoupling(Bijector):
 
 
 def rolling_spline_coupling(
-    dim: int,
-    knots: int = 16,
-    layers: Sequence[int] = (128, 128),
+    dim: int, knots: int = 16, layers: Sequence[int] = (128, 128), margin: float = 0.1
 ):
     """
     Create a chain of rolling spline couplings.
@@ -285,11 +277,15 @@ def rolling_spline_coupling(
         Sequence of neurons per hidden layer in the feed-forward network which computes
         the spline parameters from the upper dimensions of the input and the conditional
         variables.
+    margin : float (default = 0.1)
+        Safety margin for ShiftBounds. Must be in the interval [0, 0.5].
 
     """
     if dim < 2:
         raise ValueError("dim must be at least 2")
-    bijectors = [ShiftBounds()]
+    if margin < 0 or margin > 0.5:
+        raise ValueError("margin must be in the interval [0, 0.5]")
+    bijectors = [ShiftBounds(margin=margin)]
     for _ in range(dim - 1):
         bijectors.append(NeuralSplineCoupling(knots=knots, layers=layers))
         bijectors.append(Roll())

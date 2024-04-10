@@ -20,10 +20,12 @@ def train(
     X_test: Array,
     C_train: Optional[Array] = None,
     C_test: Optional[Array] = None,
-    epochs: int = 100,
+    *,
+    epochs: int = 1000,
     batch_size: int = 1024,
     optimizer: optax.GradientTransformation = DEFAULT_OPTIMIZER(learning_rate=1e-3),
     patience: int = 10,
+    warmup: float = 0.2,
     seed: int = 0,
     progress: bool = True,
 ) -> Tuple[PyTree, int, List[float], List[float]]:
@@ -111,10 +113,8 @@ def train(
 
         stop = np.isnan(loss_train[-1])
 
-        if epoch >= 2 * patience and epoch % patience == 0:
-            stop |= not np.min(loss_test[-patience:]) < np.min(
-                loss_test[-2 * patience : -patience]
-            )
+        if epoch >= warmup * epochs and epoch % patience == 0:
+            stop |= not np.min(loss_test[-patience:]) <= loss_test[best_epoch]
 
         if stop:
             break

@@ -10,15 +10,19 @@ def test_ShiftBounds():
     x = jnp.array([[1, 5], [3, 4], [6, 2]])
     sb = bi.ShiftBounds()
     variables = sb.init(KEY, x, None)
-    (z, log_det), updates = sb.apply(
+    (y, log_det), updates = sb.apply(
         variables, x, None, train=True, mutable=["batch_stats"]
     )
-    assert jnp.all(z.max(axis=0) <= 4)
-    assert jnp.all(z.min(axis=0) >= -4)
     assert_allclose(updates["batch_stats"]["xmin"], [1, 2])
     assert_allclose(updates["batch_stats"]["xmax"], [6, 5])
-    x2 = sb.apply(updates, z, None, method="inverse")
-    assert_allclose(x2, x)
+
+    z_ref = (x - x.min(0)) / (x.max(0) - x.min(0))
+    y_ref = 0.9 * z_ref + (1 - z_ref) * 0.1
+
+    assert_allclose(y, y_ref, atol=5e-6)
+
+    x2 = sb.apply(updates, y, None, method="inverse")
+    assert_allclose(x2, x, atol=1e-6)
 
 
 def test_Roll():
@@ -50,8 +54,13 @@ def test_Chain_2():
     (y, log_det), updates = chain.apply(
         variables, x, None, train=True, mutable=["batch_stats"]
     )
-    assert_allclose(y, [[-4, 0, -4], [0, -4, 0], [4, 4, 4]])
-    assert_allclose(log_det, jnp.full(3, 2.94), atol=1e-2)
+    assert_allclose(y, [[0.1, 0.5, 0.1], [0.5, 0.1, 0.5], [0.9, 0.9, 0.9]])
+
+    log_det_ref = chain.bijectors[0].apply(
+        {"batch_stats": updates["batch_stats"]["bijectors_0"]}, x, None
+    )[1]
+
+    assert_allclose(log_det, log_det_ref, atol=5e-6)
     x2 = chain.apply(updates, y, None, method="inverse")
     assert_allclose(x2, x)
 

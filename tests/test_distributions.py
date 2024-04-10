@@ -1,43 +1,78 @@
 import neural_flow.distributions as dist
 import jax.numpy as jnp
 import numpy as np
-from numpy.testing import assert_allclose
-from jax.scipy.stats import multivariate_normal
+from numpy.testing import assert_allclose, assert_array_compare
+from operator import gt, lt
+from jax.scipy.stats import multivariate_normal, beta
 import jax
 
 
 def test_Uniform():
     uni = dist.Uniform()
 
-    assert uni.bound == 5
-
     x = jnp.zeros((10, 3))
     lp = uni.log_prob(x)
 
-    density = 1 / (2 * uni.bound) ** 3
-
     assert lp.shape == (10,)
-    assert_allclose(lp, np.log(density))
+    assert_allclose(lp, 0)
 
     x = uni.sample(2, jax.random.PRNGKey(0))
     assert x.shape == (2, 3)
-    assert np.min(x) >= -uni.bound
-    assert np.max(x) <= uni.bound
+    assert np.min(x) >= 0
+    assert np.max(x) < 1
 
 
 def test_Normal():
-    normal = dist.Normal()
+    d = dist.Normal()
 
-    x = jnp.zeros((10, 3))
-    lp = normal.log_prob(x)
+    rng = np.random.default_rng(1)
+    x = rng.uniform(size=(10, 3))
+    lp = d.log_prob(x)
 
-    assert_allclose(normal._mean, np.zeros(3))
-    assert_allclose(normal._cov, np.identity(3))
+    mean = 0.5 * np.ones(3)
+    cov = np.identity(3) * 0.1**2
+    assert_allclose(lp, multivariate_normal.logpdf(x, mean, cov), atol=1e-6)
 
-    assert_allclose(lp, multivariate_normal.logpdf(x, normal._mean, normal._cov))
-
-    x = normal.sample(20000, jax.random.PRNGKey(0))
+    x = d.sample(20000, jax.random.PRNGKey(0))
     assert x.shape == (20000, 3)
 
-    assert_allclose(x.mean(0), np.zeros(3), atol=5e-2)
-    assert_allclose(np.cov(x.T), np.identity(3), atol=5e-2)
+    assert_allclose(x.mean(0), 0.5, atol=5e-2)
+    assert_allclose(np.cov(x.T), 0.1**2 * np.identity(3), atol=5e-2)
+
+
+def test_TruncatedNormal():
+    d = dist.TruncatedNormal()
+
+    rng = np.random.default_rng(1)
+    x = rng.uniform(size=(10, 3))
+    lp = d.log_prob(x)
+
+    mean = 0.5 * np.ones(3)
+    cov = np.identity(3) * 0.1**2
+    assert_allclose(lp, multivariate_normal.logpdf(x, mean, cov), atol=5e-6)
+
+    x = d.sample(20000, jax.random.PRNGKey(0))
+    assert x.shape == (20000, 3)
+
+    assert_allclose(x.mean(0), 0.5, atol=5e-2)
+    assert_allclose(np.cov(x.T), 0.1**2 * np.identity(3), atol=5e-2)
+
+
+def test_Beta():
+    d = dist.Beta()
+
+    rng = np.random.default_rng(1)
+    x = rng.uniform(size=(10, 3))
+    lp = d.log_prob(x)
+
+    assert_allclose(
+        lp,
+        beta.logpdf(x, 12, 12).sum(-1),
+    )
+
+    x = d.sample(20000, jax.random.PRNGKey(0))
+    assert x.shape == (20000, 3)
+
+    assert_allclose(x.mean(0), 0.5, atol=5e-2)
+    assert_array_compare(gt, x, 0)
+    assert_array_compare(lt, x, 1)
