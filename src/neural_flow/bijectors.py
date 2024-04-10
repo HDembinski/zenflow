@@ -273,7 +273,7 @@ def rolling_spline_coupling(
 
     The chain starts with ShiftBounds and then alternates between
     NeuralSplineCoupling and Roll once for each dimension in the input.
-    The input must be at least two-dimensional.
+    The input must be at least two-dimensional for this to work.
 
     Parameters
     ----------
