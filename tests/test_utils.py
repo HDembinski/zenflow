@@ -9,7 +9,7 @@ def test_rational_quadratic_spline_1():
     W = np.tile([0.25, 0.25, 0.25, 0.25], len(x)).reshape(*x.shape, -1)
     H = np.tile([0.25, 0.25, 0.25, 0.25], len(x)).reshape(*x.shape, -1)
     D = np.tile([1.0, 1.0, 1.0], len(x)).reshape(*x.shape, -1)
-    y, log_det = utils.rational_quadratic_spline(x, W, H, D, False)
+    y, log_det = utils.rational_quadratic_spline_forward(x, W, H, D)
     assert_allclose(y, x)
 
 
@@ -33,11 +33,11 @@ def test_rational_quadratic_spline_2():
     dy = np.tile(dy, nx).reshape(*x.shape, -1)
     slope = np.tile(slope, nx).reshape(*x.shape, -1)
 
-    y, log_det = utils.rational_quadratic_spline(x, dx, dy, slope, False)
+    y, log_det = utils.rational_quadratic_spline_forward(x, dx, dy, slope)
 
     j, je = jacobi.jacobi(
-        lambda x: utils.rational_quadratic_spline(
-            x.reshape(1000, 1), dx, dy, slope, False
+        lambda x: utils.rational_quadratic_spline_forward(
+            x.reshape(1000, 1), dx, dy, slope
         )[0].reshape(-1),
         x.reshape(-1),
         diagonal=True,
@@ -45,6 +45,9 @@ def test_rational_quadratic_spline_2():
 
     assert_allclose(y, x, atol=0.1)
     assert_allclose(log_det, np.log(j), atol=0.01)
+
+    x2 = utils.rational_quadratic_spline_inverse(y, dx, dy, slope)
+    assert_allclose(x2, x, atol=1e-5)
 
 
 def test_index():

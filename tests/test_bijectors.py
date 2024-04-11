@@ -56,7 +56,7 @@ def test_Chain_2():
     )
     assert_allclose(y, [[0.1, 0.5, 0.1], [0.5, 0.1, 0.5], [0.9, 0.9, 0.9]])
 
-    log_det_ref = chain.bijectors[0].apply(
+    log_det_ref = chain[0].apply(
         {"batch_stats": updates["batch_stats"]["bijectors_0"]}, x, None
     )[1]
 

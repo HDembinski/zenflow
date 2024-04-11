@@ -1,6 +1,6 @@
 """Bijectors used in conditional normalizing flows."""
 
-from typing import Tuple, Sequence, Callable
+from typing import Tuple, Sequence, Callable, Union
 from jaxtyping import Array
 from abc import ABC, abstractmethod
 from jax import numpy as jnp
@@ -84,7 +84,7 @@ class Bijector(nn.Module, ABC):
         return NotImplemented
 
 
-class Chain(Bijector):
+class Chain(Bijector, Sequence):
     """
     Chain of other bjiectors.
 
@@ -109,6 +109,14 @@ class Chain(Bijector):
         for bijector in self.bijectors[::-1]:
             x = bijector.inverse(x, c)
         return x
+
+    def __getitem__(self, idx: Union[int, slice]):
+        """Get bijector at location idx."""
+        return self.bijectors[idx]
+
+    def __len__(self):
+        """Return number of bijectors in the chain."""
+        return len(self.bijectors)
 
 
 def chain(*bijectors):
@@ -267,7 +275,7 @@ class NeuralSplineCoupling(Bijector):
 
 def rolling_spline_coupling(
     dim: int, knots: int = 16, layers: Sequence[int] = (128, 128), margin: float = 0.1
-):
+) -> Chain:
     """
     Create a chain of rolling spline couplings.
 

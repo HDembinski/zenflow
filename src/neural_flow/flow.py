@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax
 
 from .distributions import Distribution, Beta
-from .bijectors import Bijector
+from .bijectors import Bijector, Chain
 from flax import linen as nn
 
 __all__ = ["Flow"]
@@ -19,7 +19,14 @@ class Flow(nn.Module):
     bijector: Bijector
     latent: Distribution = Beta()
 
-    @nn.compact
+    @nn.nowrap
+    def _normalize_c(self, x: Array, c: Optional[Array]):
+        if c is None:
+            c = jnp.zeros((x.shape[0], 0))
+        elif c.ndim == 1:
+            c = c.reshape(-1, 1)
+        return c
+
     def __call__(
         self, x: Array, c: Optional[Array] = None, *, train: bool = False
     ) -> Array:
@@ -39,12 +46,9 @@ class Flow(nn.Module):
             Whether to run in training mode (update BatchNorm statistics, etc.).
 
         """
-        if c is None:
-            c = jnp.zeros((x.shape[0], 0))
-        elif c.ndim == 1:
-            c = c.reshape(-1, 1)
-        u, log_det = self.bijector(x, c, train)
-        log_prob = self.latent.log_prob(u) + log_det
+        c = self._normalize_c(x, c)
+        x, log_det = self.bijector(x, c, train)
+        log_prob = self.latent.log_prob(x) + log_det
         log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
         return log_prob
 
@@ -76,6 +80,23 @@ class Flow(nn.Module):
             c = conditions_or_size
             if c.ndim == 1:
                 c = c.reshape(-1, 1)
-        u = self.latent.sample(size, jax.random.PRNGKey(seed))
-        x = self.bijector.inverse(u, c)
+        x = self.latent.sample(size, jax.random.PRNGKey(seed))
+        x = self.bijector.inverse(x, c)
         return x
+
+    def _steps(self, x, c: Optional[Array] = None, *, inverse: bool = False):
+        if not isinstance(self.bijector, Chain):
+            raise ValueError("only for Chain bijector")
+
+        c = self._normalize_c(x, c)
+
+        results = []
+        if inverse:
+            for bijector in self.bijector[::-1]:
+                x = bijector.inverse(x, c)
+                results.append(x)
+        else:
+            for bijector in self.bijector:
+                x, _ = bijector(x, c, False)
+                results.append(x)
+        return results
