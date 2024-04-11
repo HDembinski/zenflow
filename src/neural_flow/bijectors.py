@@ -138,7 +138,7 @@ class ShiftBounds(Bijector):
     mapped to the boundary values, where the latent distribution may be exactly zero.
     """
 
-    margin: float = 0.1
+    margin: float = 0.01
 
     @nn.compact
     def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
@@ -161,6 +161,11 @@ class ShiftBounds(Bijector):
 
         xscale = 1 / (xmax - xmin)
         z = (x - xmin) * xscale
+        # If test sample has more extreme values than train sample, it is possible to
+        # get z values outside of the interval [0, 1], which may cause the latent
+        # distribution to be evaluated outside of its non-zero domain. We clip the
+        # values as a workaround.
+        z = jnp.clip(z, 0, 1)
         y = (1 - self.margin) * z + (1 - z) * self.margin
 
         abs_deriv = (1 - 2 * self.margin) * xscale

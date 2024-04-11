@@ -107,11 +107,11 @@ def train(
         loss_train.append(metric_fn(variables, X, C).item())
         loss_test.append(metric_fn(variables, X_test, C_test).item())
 
-        if loss_test[-1] < loss_test[best_epoch]:
+        if loss_test[-1] <= loss_test[best_epoch]:
             best_epoch = epoch
             best_variables = variables
 
-        stop = np.isnan(loss_train[-1])
+        stop = np.isnan(loss_train[-1]) or not np.isfinite(loss_train[-1])
 
         if epoch >= warmup * epochs and epoch % patience == 0:
             stop |= not np.min(loss_test[-patience:]) <= loss_test[best_epoch]
