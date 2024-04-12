@@ -84,7 +84,7 @@ def test_Chain_3():
     assert_allclose(x2, x, rtol=1e-5)
 
 
-def test_NeuralSplineCoupling():
+def test_NeuralSplineCoupling_1():
     x = jnp.array([[1.5, 2], [1, 3.5], [3.5, 4]])
     c = jnp.array([[1.0], [2.0], [3.0]])
     nsc = bi.NeuralSplineCoupling()
@@ -92,6 +92,13 @@ def test_NeuralSplineCoupling():
     (y, log_det) = nsc.apply(variables, x, c, train=False)
     x2 = nsc.apply(variables, y, c, method="inverse")
     assert_allclose(x2, x, atol=1e-5)
+
+
+def test_NeuralSplineCoupling_2():
+    x = jnp.array([[1.5, 2, 3.3], [1, 3.5, 4.5], [3.5, 4, 5.5]])
+    t, c = bi.NeuralSplineCoupling._split(x)
+    assert t.shape[1] == 1
+    assert c.shape[1] == 0
 
 
 def test_rolling_spline_coupling():

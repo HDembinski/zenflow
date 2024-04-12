@@ -24,7 +24,7 @@ def train(
     epochs: int = 1000,
     batch_size: int = 1024,
     optimizer: optax.GradientTransformation = DEFAULT_OPTIMIZER(learning_rate=1e-3),
-    patience: int = 10,
+    patience: float = 0.1,
     warmup: float = 0.2,
     seed: int = 0,
     progress: bool = True,
@@ -111,10 +111,11 @@ def train(
             best_epoch = epoch
             best_variables = variables
 
-        stop = np.isnan(loss_train[-1]) or not np.isfinite(loss_train[-1])
+        stop = not np.isfinite(loss_train[-1])
 
-        if epoch >= warmup * epochs and epoch % patience == 0:
-            stop |= not np.min(loss_test[-patience:]) <= loss_test[best_epoch]
+        pat = int(patience * epochs)
+        if epoch >= warmup * epochs and epoch % pat == 0:
+            stop |= not np.min(loss_test[-pat:]) <= loss_test[best_epoch]
 
         if stop:
             break

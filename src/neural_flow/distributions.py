@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from jaxtyping import Array
+from typing import Optional
 import jax.numpy as jnp
 from jax import random
 from jax.scipy import stats
@@ -10,8 +11,7 @@ from jax.scipy import stats
 class Distribution(ABC):
     """Distribution base class with infrastructure for lazy initialization."""
 
-    __dim: int
-    __initialized: bool = False
+    __dim: Optional[int] = None
 
     def log_prob(self, x: Array) -> Array:
         """
@@ -28,9 +28,8 @@ class Distribution(ABC):
             Log-probabilities of the samples.
 
         """
-        if not self.__initialized:
+        if self.__dim is None:
             self.__dim = x.shape[-1]
-            self.__initialized = True
         return self._log_prob_impl(x)
 
     @property

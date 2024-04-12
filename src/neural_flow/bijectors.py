@@ -231,9 +231,7 @@ class NeuralSplineCoupling(Bijector):
         x_dim = x.shape[1]
         x_split = x_dim // 2
         assert x_split > 0 and x_split < x_dim
-        lower = x[:, :x_split]
-        upper = x[:, x_split:]
-        return lower, upper
+        return x[:, :x_split], x[:, x_split:]
 
     @nn.compact
     def _spline_params(
