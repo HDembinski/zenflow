@@ -7,6 +7,7 @@ from typing import Tuple, List, Optional
 import numpy as np
 import jax
 import optax
+import warnings
 
 if hasattr(optax, "nadamw"):
     DEFAULT_OPTIMIZER = optax.nadamw
@@ -24,14 +25,20 @@ def train(
     epochs: int = 1000,
     batch_size: int = 1024,
     optimizer: optax.GradientTransformation = DEFAULT_OPTIMIZER(learning_rate=1e-3),
-    patience: float = 0.1,
+    patience: float = 0.05,
     warmup: float = 0.2,
     seed: int = 0,
     progress: bool = True,
+    initial_variables: Optional[PyTree] = None,
 ) -> Tuple[PyTree, int, List[float], List[float]]:
     """Trains the normalizing flow on the provided inputs."""
-    root_key = jax.random.PRNGKey(seed)
-    init_key, iter_key = jax.random.split(root_key)
+    if warmup < 1:
+        warmup = warmup * epochs
+    warmup = int(warmup)
+
+    if patience < 1:
+        patience = patience * epochs
+    patience = int(patience)
 
     X_train = jax.device_put(X_train)
     X_test = jax.device_put(X_test)
@@ -40,9 +47,15 @@ def train(
     if C_test is not None:
         C_test = jax.device_put(C_test)
 
-    variables = flow.init(
-        init_key, X_train[:1], None if C_train is None else C_train[:1]
-    )
+    root_key = jax.random.PRNGKey(seed)
+    init_key, iter_key = jax.random.split(root_key)
+
+    if initial_variables is None:
+        variables = flow.init(
+            init_key, X_train[:1], None if C_train is None else C_train[:1]
+        )
+    else:
+        variables = initial_variables
     params = variables["params"]
     batch_stats = variables["batch_stats"]
 
@@ -107,17 +120,19 @@ def train(
         loss_train.append(metric_fn(variables, X, C).item())
         loss_test.append(metric_fn(variables, X_test, C_test).item())
 
+        if not np.isfinite(loss_train[-1]):
+            msg = f"epoch {epoch}: loss[train] not finite, abort training"
+            warnings.warn(msg, RuntimeWarning)
+            break
+
         if loss_test[-1] <= loss_test[best_epoch]:
             best_epoch = epoch
             best_variables = variables
 
-        stop = not np.isfinite(loss_train[-1])
-
-        pat = int(patience * epochs)
-        if epoch >= warmup * epochs and epoch % pat == 0:
-            stop |= not np.min(loss_test[-pat:]) <= loss_test[best_epoch]
-
-        if stop:
-            break
+        if epoch >= warmup and epoch >= 2 * patience and epoch % patience == 0:
+            if not np.min(loss_test[-patience:]) < np.min(
+                loss_test[-2 * patience : -patience]
+            ):
+                break
 
     return best_variables, best_epoch, loss_train, loss_test

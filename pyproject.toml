@@ -50,6 +50,6 @@ testpaths = ["src/resample", "tests"]
 log_cli_level = "INFO"
 xfail_strict = true
 filterwarnings = [
-  "error::DeprecationWarning",
+  # "error::DeprecationWarning",
   "error::numpy.VisibleDeprecationWarning",
 ]

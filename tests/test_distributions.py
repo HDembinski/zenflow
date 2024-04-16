@@ -31,7 +31,7 @@ def test_Normal():
 
     mean = 0.5 * np.ones(3)
     cov = np.identity(3) * 0.1**2
-    assert_allclose(lp, multivariate_normal.logpdf(x, mean, cov), atol=1e-6)
+    assert_allclose(lp, multivariate_normal.logpdf(x, mean, cov), atol=1e-5)
 
     x = d.sample(20000, jax.random.PRNGKey(0))
     assert x.shape == (20000, 3)

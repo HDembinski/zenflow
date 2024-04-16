@@ -28,7 +28,11 @@ class Flow(nn.Module):
         return c
 
     def __call__(
-        self, x: Array, c: Optional[Array] = None, *, train: bool = False
+        self,
+        x: Array,
+        c: Optional[Array] = None,
+        *,
+        train: bool = False,
     ) -> Array:
         """
         Return log-likelihood of the samples.

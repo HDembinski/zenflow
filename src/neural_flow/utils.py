@@ -13,6 +13,9 @@ __all__ = [
 ]
 
 
+EPS = 1e-5
+
+
 def squareplus(x: Array, b: float = 4) -> Array:
     """Compute softplus-like activation."""
     return 0.5 * (x + jnp.sqrt(jnp.square(x) + b))
@@ -97,23 +100,26 @@ def rational_quadratic_spline_forward(
 
     # [1] Appendix A.1
     # calculate spline
-    relx = (x - xk) / dxk
-    num = dyk * (sk * relx**2 + dk * relx * (1 - relx))
-    den = sk + (dkp1 + dk - 2 * sk) * relx * (1 - relx)
-    y = yk + num / den
-
-    # [1] Appendix A.2
-    # calculate the log determinant
-    dnum = dkp1 * relx**2 + 2 * sk * relx * (1 - relx) + dk * (1 - relx) ** 2
-    dden = sk + (dkp1 + dk - 2 * sk) * relx * (1 - relx)
-    log_det = 2 * jnp.log(sk) + jnp.log(dnum) - 2 * jnp.log(dden)
-
-    # replace log_det for out-of-bounds values = 0
-    log_det = jnp.where(out_of_bounds, 0, log_det)
-    log_det = log_det.sum(axis=1)
+    z = (x - xk) / (dxk + EPS)
+    z = jnp.clip(z, EPS, 1 - EPS)
+    az = 1 - z
+    num = dyk * z * (sk * z + dk * az)
+    den = sk + (dkp1 + dk - 2 * sk) * z * az
+    y = yk + num / (den + EPS)
 
     # replace out-of-bounds values with original values
     y = jnp.where(out_of_bounds, x, y)
+
+    # [1] Appendix A.2
+    # calculate the log determinant
+    dnum = z * (dkp1 * z + 2 * sk * az) + dk * az**2
+    dden = sk + (dkp1 + dk - 2 * sk) * z * az
+    log_det = 2 * jnp.log(sk + EPS) + jnp.log(dnum + EPS) - 2 * jnp.log(dden + EPS)
+
+    # set log_det for out-of-bounds values to 0
+    log_det = jnp.where(out_of_bounds, 0, log_det)
+    log_det = log_det.sum(axis=1)
+
     return y, log_det
 
 
@@ -166,12 +172,12 @@ def rational_quadratic_spline_inverse(
 
     # [1] Appendix A.3
     # quadratic formula coefficients
-    a = (dyk) * (sk - dk) + (y - yk) * (dkp1 + dk - 2 * sk)
-    b = (dyk) * dk - (y - yk) * (dkp1 + dk - 2 * sk)
+    a = dyk * (sk - dk) + (y - yk) * (dkp1 + dk - 2 * sk)
+    b = dyk * dk - (y - yk) * (dkp1 + dk - 2 * sk)
     c = -sk * (y - yk)
 
-    relx = 2 * c / (-b - jnp.sqrt(b**2 - 4 * a * c))
-    x = relx * dxk + xk
+    z = 2 * c / (-b - jnp.sqrt(b**2 - 4 * a * c))
+    x = z * dxk + xk
 
     # replace out-of-bounds values with original values
     x = jnp.where(out_of_bounds, y, x)
@@ -193,7 +199,7 @@ def _compute_rqs_input(
         constant_values=1,
     )
     # knot slopes
-    sk = dy / dx
+    sk = dy / (dx + EPS)
 
     idx, out_of_bounds = _index(x, xk if forward else yk)
 

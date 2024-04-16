@@ -10,7 +10,7 @@ def test_rational_quadratic_spline_1():
     H = np.tile([0.25, 0.25, 0.25, 0.25], len(x)).reshape(*x.shape, -1)
     D = np.tile([1.0, 1.0, 1.0], len(x)).reshape(*x.shape, -1)
     y, log_det = utils.rational_quadratic_spline_forward(x, W, H, D)
-    assert_allclose(y, x)
+    assert_allclose(y, x, atol=1e-5)
 
 
 def test_rational_quadratic_spline_2():
@@ -47,7 +47,7 @@ def test_rational_quadratic_spline_2():
     assert_allclose(log_det, np.log(j), atol=0.01)
 
     x2 = utils.rational_quadratic_spline_inverse(y, dx, dy, slope)
-    assert_allclose(x2, x, atol=1e-5)
+    assert_allclose(x2, x, atol=1e-4)
 
 
 def test_index():

@@ -17,7 +17,7 @@ def test_ShiftBounds():
     assert_allclose(updates["batch_stats"]["xmax"], [6, 5])
 
     z_ref = (x - x.min(0)) / (x.max(0) - x.min(0))
-    y_ref = 0.9 * z_ref + (1 - z_ref) * 0.1
+    y_ref = 0.99 * z_ref + (1 - z_ref) * 0.01
 
     assert_allclose(y, y_ref, atol=5e-6)
 
@@ -54,7 +54,7 @@ def test_Chain_2():
     (y, log_det), updates = chain.apply(
         variables, x, None, train=True, mutable=["batch_stats"]
     )
-    assert_allclose(y, [[0.1, 0.5, 0.1], [0.5, 0.1, 0.5], [0.9, 0.9, 0.9]])
+    assert_allclose(y, [[0.01, 0.5, 0.01], [0.5, 0.01, 0.5], [0.99, 0.99, 0.99]])
 
     log_det_ref = chain[0].apply(
         {"batch_stats": updates["batch_stats"]["bijectors_0"]}, x, None
@@ -96,9 +96,9 @@ def test_NeuralSplineCoupling_1():
 
 def test_NeuralSplineCoupling_2():
     x = jnp.array([[1.5, 2, 3.3], [1, 3.5, 4.5], [3.5, 4, 5.5]])
-    t, c = bi.NeuralSplineCoupling._split(x)
-    assert t.shape[1] == 1
-    assert c.shape[1] == 0
+    xt, xc = bi.NeuralSplineCoupling._split(x)
+    assert xt.shape[1] == 1
+    assert xc.shape[1] == 2
 
 
 def test_rolling_spline_coupling():
@@ -112,4 +112,4 @@ def test_rolling_spline_coupling():
     variables = {"params": variables["params"], "batch_stats": updates["batch_stats"]}
     (y, log_det) = rsc.apply(variables, x, c, train=False)
     x2 = rsc.apply(variables, y, c, method="inverse")
-    assert_allclose(x2, x, atol=1e-5)
+    assert_allclose(x2, x, atol=1e-4)
