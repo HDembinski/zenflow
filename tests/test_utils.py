@@ -72,3 +72,23 @@ def test_knots():
     dx = np.array((0.25, 0.25, 0.25))
     xk = utils._knots(dx)
     assert_allclose(xk, [0, 0.25, 0.5, 0.75])
+
+
+@pytest.mark.parametrize("threshold", (0, 0.1))
+def test_softmax_with_threshold_1(threshold):
+    x = np.array((-5.0, 1.0, 2.0))
+
+    y = utils.softmax_with_threshold(x, threshold)
+    assert_allclose(np.sum(y), 1)
+    assert np.all(y >= threshold)
+
+
+def test_softmax_with_threshold_2():
+    x = np.array([(-5.0, 1.0, 2.0), (-4.0, 2.0, 3.0)])
+
+    y = utils.softmax_with_threshold(x, 0.1)
+    assert_allclose(np.sum(y[0]), 1)
+    assert_allclose(np.sum(y[1]), 1)
+    assert_allclose(np.sum(y), 2)
+    assert np.all(y[0] >= 0.1)
+    assert np.all(y[1] >= 0.1)

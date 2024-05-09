@@ -3,7 +3,6 @@
 from typing import Tuple
 from jaxtyping import Array
 import jax.numpy as jnp
-from jax.nn import softmax
 
 __all__ = [
     "squareplus",
@@ -19,6 +18,20 @@ EPS = 1e-5
 def squareplus(x: Array, b: float = 4) -> Array:
     """Compute softplus-like activation."""
     return 0.5 * (x + jnp.sqrt(jnp.square(x) + b))
+
+
+def softmax_with_threshold(x: Array, threshold: float = 0) -> Array:
+    """
+    Similar softmax, but smallest possible value is threshold.
+
+    Threshold must be positive and less then 1 / n. We use squareplus instead of
+    exponential to obtain a softer gradient.
+    """
+    x = squareplus(x)
+    n = x.shape[-1]
+    c = threshold / (1 - n * threshold)
+    xs = jnp.sum(x, axis=-1)[..., None]
+    return (x / xs + c) / (1 + c * n)
 
 
 def normalize_spline_params(
@@ -43,8 +56,8 @@ def normalize_spline_params(
         Slope parameters are in range [0, oo].
 
     """
-    dx = softmax(dx)
-    dy = softmax(dy)
+    dx = softmax_with_threshold(dx, EPS)
+    dy = softmax_with_threshold(dy, EPS)
     sl = squareplus(sl)
     return dx, dy, sl
 
@@ -53,9 +66,16 @@ def rational_quadratic_spline_forward(
     x: Array, dx: Array, dy: Array, slope: Array
 ) -> Tuple[Array, Array]:
     """
-    Apply rational quadratic spline to inputs and return outputs with log_det.
+    Apply the spline transform to return outputs and log-determinant.
 
     This uses the piecewise rational quadratic spline developed in [1].
+
+    To be efficient, this function is was written in a vectorization-friendly way. It
+    computes the transform for a batch of M points, where each point has dimension N.
+    Each dimension is transformed in parallel using an independent set of K spline
+    variables for that dimension, where K is the number of knots of the spline. Since
+    the transformation is done for each dimension independently, the Jacobian is
+    triangular and the determinant is the product of its diagonal elements.
 
     Parameters
     ----------
@@ -74,7 +94,7 @@ def rational_quadratic_spline_forward(
     -------
     y : Array of shape (M, N)
         The result of applying the splines to the inputs.
-    log_det : Array of shape (M, N)
+    log_det : Array of shape (M,)
         The log determinant of the Jacobian at the inputs.
 
     References
@@ -98,9 +118,8 @@ def rational_quadratic_spline_forward(
         out_of_bounds,
     ) = _compute_rqs_input(x, dx, dy, slope, True)
 
-    # [1] Appendix A.1
-    # calculate spline
-    z = (x - xk) / (dxk + EPS)
+    # [1] Appendix A.1, Eq. 19
+    z = (x - xk) / dxk
     z = jnp.clip(z, EPS, 1 - EPS)
     az = 1 - z
     num = dyk * z * (sk * z + dk * az)
@@ -110,11 +129,10 @@ def rational_quadratic_spline_forward(
     # replace out-of-bounds values with original values
     y = jnp.where(out_of_bounds, x, y)
 
-    # [1] Appendix A.2
-    # calculate the log determinant
-    dnum = z * (dkp1 * z + 2 * sk * az) + dk * az**2
-    dden = sk + (dkp1 + dk - 2 * sk) * z * az
-    log_det = 2 * jnp.log(sk + EPS) + jnp.log(dnum + EPS) - 2 * jnp.log(dden + EPS)
+    # [1] Appendix A.2, Eq. 22
+    num = z * (dkp1 * z + 2 * sk * az) + dk * az**2
+    den = sk + (dkp1 + dk - 2 * sk) * z * az
+    log_det = 2 * jnp.log(sk + EPS) + jnp.log(num + EPS) - 2 * jnp.log(den + EPS)
 
     # set log_det for out-of-bounds values to 0
     log_det = jnp.where(out_of_bounds, 0, log_det)
@@ -129,7 +147,7 @@ def rational_quadratic_spline_inverse(
     """
     Apply the inverse rational quadratic spline mapping.
 
-    This uses the piecewise rational quadratic spline developed in [1].
+    See rational_quadratic_spline_forward for implementation details.
 
     Parameters
     ----------
@@ -170,7 +188,7 @@ def rational_quadratic_spline_inverse(
         out_of_bounds,
     ) = _compute_rqs_input(y, dx, dy, slope, False)
 
-    # [1] Appendix A.3
+    # [1] Appendix A.3, Eq. 29-32
     # quadratic formula coefficients
     a = dyk * (sk - dk) + (y - yk) * (dkp1 + dk - 2 * sk)
     b = dyk * dk - (y - yk) * (dkp1 + dk - 2 * sk)
@@ -187,9 +205,7 @@ def rational_quadratic_spline_inverse(
 def _compute_rqs_input(
     x: Array, dx: Array, dy: Array, slope: Array, forward: bool
 ) -> Tuple[Array, Array, Array, Array, Array, Array, Array, Array]:
-    # knot x-positions
     xk = _knots(dx)
-    # knot y-positions
     yk = _knots(dy)
     # knot derivatives with boundary condition
     dk = jnp.pad(
@@ -199,7 +215,7 @@ def _compute_rqs_input(
         constant_values=1,
     )
     # knot slopes
-    sk = dy / (dx + EPS)
+    sk = dy / dx
 
     idx, out_of_bounds = _index(x, xk if forward else yk)
 
