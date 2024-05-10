@@ -46,10 +46,13 @@ no_implicit_optional = false
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules --strict-config --strict-markers -q -ra --ff"
-testpaths = ["src/resample", "tests"]
+testpaths = ["src/zenflow", "tests"]
 log_cli_level = "INFO"
 xfail_strict = true
 filterwarnings = [
   # "error::DeprecationWarning",
   "error::numpy.VisibleDeprecationWarning",
 ]
+
+[tool.coverage.run]
+include = ["src/*"]
