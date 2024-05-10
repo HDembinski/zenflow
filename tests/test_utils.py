@@ -1,5 +1,5 @@
 from numpy.testing import assert_allclose
-from neural_flow import utils
+from zenflow import utils
 import pytest
 import numpy as np
 

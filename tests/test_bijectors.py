@@ -1,4 +1,4 @@
-from neural_flow import bijectors as bi
+from zenflow import bijectors as bi
 import jax
 from jax import numpy as jnp
 from numpy.testing import assert_allclose

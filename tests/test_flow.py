@@ -1,5 +1,5 @@
-from neural_flow import Flow
-from neural_flow.bijectors import ShiftBounds
+from zenflow import Flow
+from zenflow.bijectors import ShiftBounds
 import jax
 import jax.numpy as jnp
 

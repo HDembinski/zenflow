@@ -19,7 +19,7 @@ jobs:
 
     environment:
       name: pypi
-      url: https://pypi.org/p/neural_flow
+      url: https://pypi.org/p/zenflow
     permissions:
       id-token: write
 

@@ -1,6 +1,6 @@
 import numpy as np
-from neural_flow import Flow, train
-from neural_flow.bijectors import rolling_spline_coupling
+from zenflow import Flow, train
+from zenflow.bijectors import rolling_spline_coupling
 import pytest
 
 
