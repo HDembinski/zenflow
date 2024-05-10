@@ -1,6 +1,6 @@
 # Neural flow
 
-![](https://img.shields.io/pypi/v/zenflow.svg)
+[![](https://img.shields.io/pypi/v/zenflow.svg)](https://pypi.org/project/zenflow/)
 
 This library implements a flow object and bijectors as FLAX modules. Conditional flows are supported.
 
