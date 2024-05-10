@@ -15,7 +15,7 @@ dynamic = ["version"]
 repository = "https://github.com/hdembinski/neural_flow"
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-cov", "coverage[toml]"]
+test = ["pytest", "pytest-cov", "coverage[toml]", "jacobi"]
 all = ["matplotlib", "scikit-learn", "numpy"]
 
 [tool.setuptools.packages.find]
