@@ -58,7 +58,7 @@ class Bijector(nn.Module, ABC):
             Logarithm of the determinant of the transformation.
 
         """
-        return NotImplemented
+        raise NotImplementedError
 
     @abstractmethod
     def inverse(self, x: Array, c: Array) -> Array:
@@ -81,7 +81,7 @@ class Bijector(nn.Module, ABC):
             N samples of the target distribution.
 
         """
-        return NotImplemented
+        raise NotImplementedError
 
 
 class Chain(Bijector, Sequence):
