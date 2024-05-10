@@ -3,11 +3,11 @@ requires = ["setuptools >= 61", "setuptools_scm[toml] >= 6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "neural-flow"
-description = "Probabilistic modeling with normalizing flows."
+name = "zenflow"
+description = "Learn distributions with normalizing flows."
 authors = [{ name = "Hans Dembinski" }, { email = "hans.dembinski@gmail.com" }]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = ["jax", "jaxlib", "flax", "optax", "jaxtyping"]
 dynamic = ["version"]
 
@@ -15,7 +15,7 @@ dynamic = ["version"]
 repository = "https://github.com/hdembinski/neural_flow"
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-cov", "coverage[toml]"]
+test = ["pytest", "pytest-cov", "coverage[toml]", "jacobi"]
 all = ["matplotlib", "scikit-learn", "numpy"]
 
 [tool.setuptools.packages.find]
