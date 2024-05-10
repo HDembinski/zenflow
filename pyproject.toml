@@ -12,7 +12,7 @@ dependencies = ["jax", "jaxlib", "flax", "optax", "jaxtyping"]
 dynamic = ["version"]
 
 [project.urls]
-repository = "https://github.com/hdembinski/neural_flow"
+repository = "https://github.com/hdembinski/zenflow"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-cov", "coverage[toml]", "jacobi"]
