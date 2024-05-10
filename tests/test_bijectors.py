@@ -2,8 +2,33 @@ from zenflow import bijectors as bi
 import jax
 from jax import numpy as jnp
 from numpy.testing import assert_allclose
+import pytest
+from typing import Tuple
+from jaxtyping import Array
 
 KEY = jax.random.PRNGKey(0)
+
+
+def test_Bijector():
+    with pytest.raises(TypeError):
+        bi.Bijector()
+
+    class Foo(bi.Bijector):
+        def __call__(
+            self, x: Array, c: Array, train: bool = False
+        ) -> Tuple[Array, Array]:
+            return super().__call__(x, c, train)
+
+        def inverse(self, x: Array, c: Array) -> Array:
+            return super().inverse(x, c)
+
+    foo = Foo()
+
+    x = jnp.array((1, 2, 3))
+    with pytest.raises(NotImplementedError):
+        foo(x, x)
+    with pytest.raises(NotImplementedError):
+        foo.inverse(x, x)
 
 
 def test_ShiftBounds():
@@ -39,6 +64,7 @@ def test_Roll():
 def test_Chain_1():
     x = jnp.array([[1, 2, 3], [4, 5, 6]])
     chain = bi.Chain([bi.Roll(), bi.Roll()])
+    assert len(chain) == 2
     variables = chain.init(KEY, x, None)
     (z, log_det) = chain.apply(variables, x, None, train=True)
     assert_allclose(z, [[2, 3, 1], [5, 6, 4]])
@@ -113,3 +139,18 @@ def test_rolling_spline_coupling():
     (y, log_det) = rsc.apply(variables, x, c, train=False)
     x2 = rsc.apply(variables, y, c, method="inverse")
     assert_allclose(x2, x, atol=1e-4)
+
+
+def test_rolling_spline_coupling_bad_input():
+
+    with pytest.raises(ValueError):
+        bi.rolling_spline_coupling(0)
+
+    with pytest.raises(ValueError):
+        bi.rolling_spline_coupling(1)
+
+    with pytest.raises(ValueError):
+        bi.rolling_spline_coupling(2, margin=-0.1)
+
+    with pytest.raises(ValueError):
+        bi.rolling_spline_coupling(2, margin=0.51)
