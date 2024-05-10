@@ -14,7 +14,7 @@ __all__ = ["Flow"]
 
 
 class Flow(nn.Module):
-    """A conditional normalizing flow."""
+    """Optionally conditional normalizing flow."""
 
     bijector: Bijector
     latent: Distribution = Beta()
