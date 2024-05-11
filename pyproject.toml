@@ -16,7 +16,7 @@ repository = "https://github.com/hdembinski/zenflow"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-cov", "coverage[toml]", "jacobi"]
-all = ["matplotlib", "scikit-learn", "numpy"]
+all = ["matplotlib", "scikit-learn", "numpy", "tqdm"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -27,12 +27,14 @@ where = ["src"]
 profile = "black"
 multi_line_output = 3
 
-[tool.ruff.lint]
-select = ["E", "F", "W", "D"]
+[tool.ruff]
+src = ["src"]
+extend-select = ["D"]
 ignore = ["D212", "D203", "D107", "D102"]
 unfixable = ["ERA"]
+pydocstyle.convention = "numpy"
 
-[tool.ruff.lint.extend-per-file-ignores]
+[tool.ruff.per-file-ignores]
 "*.ipynb" = ["D101", "D103"]
 "test_*.py" = ["D"]
 
