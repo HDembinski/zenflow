@@ -9,6 +9,12 @@ This library implements a flow-based generative model and bijectors which are im
 
 The source code is released under the MIT license.
 
+## Installation
+
+```sh
+pip install zenflow
+```
+
 ## Documentation
 
 There is currently no online documentation, but the library has useful docstrings. Please use the docstrings and look into the usage examples in the `examples` folder.
