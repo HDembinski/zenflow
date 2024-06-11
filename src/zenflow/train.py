@@ -1,7 +1,7 @@
 """Train flow."""
 
 from .flow import Flow
-from jaxtyping import PyTree, Array
+from flax.typing import ArrayPytree, Array
 import jax.numpy as jnp
 from typing import Tuple, List, Optional
 import numpy as np
@@ -29,8 +29,8 @@ def train(
     warmup: float = 0.2,
     seed: int = 0,
     progress: bool = True,
-    initial_variables: Optional[PyTree] = None,
-) -> Tuple[PyTree, int, List[float], List[float]]:
+    initial_variables: Optional[ArrayPytree] = None,
+) -> Tuple[ArrayPytree, int, List[float], List[float]]:
     """Trains the normalizing flow on the provided inputs."""
     if warmup < 1:
         warmup = warmup * epochs

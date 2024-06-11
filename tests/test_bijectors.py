@@ -1,10 +1,11 @@
 from zenflow import bijectors as bi
 import jax
 from jax import numpy as jnp
-from numpy.testing import assert_allclose
+import numpy as np
+from numpy.testing import assert_allclose, assert_array_equal
 import pytest
 from typing import Tuple
-from jaxtyping import Array
+from flax.typing import Array
 
 KEY = jax.random.PRNGKey(0)
 
@@ -31,7 +32,7 @@ def test_Bijector():
         foo.inverse(x, x)
 
 
-def test_ShiftBounds():
+def test_ShiftBounds_1():
     x = jnp.array([[1, 5], [3, 4], [6, 2]])
     sb = bi.ShiftBounds()
     variables = sb.init(KEY, x, None)
@@ -48,6 +49,42 @@ def test_ShiftBounds():
 
     x2 = sb.apply(updates, y, None, method="inverse")
     assert_allclose(x2, x, atol=1e-6)
+
+
+def test_ShiftBounds_2():
+    jacobi = pytest.importorskip("jacobi")
+
+    x = jnp.column_stack(
+        [
+            2 * jax.random.uniform(KEY, shape=(10,)) - 1,
+            jax.random.normal(KEY, shape=(10,)) * 10 - 10,
+        ]
+    )
+
+    tr = bi.ShiftBounds()
+    variables = tr.init(KEY, x, x)
+    (y, log_det), variables = tr.apply(
+        variables, x, x, mutable="batch_stats", train=True
+    )
+
+    # eliminate the extreme values from the data set, jacobi does not work for those
+    mask = ~(
+        (y[:, 0] == tr.margin)
+        | (y[:, 1] == tr.margin)
+        | (y[:, 0] == 1 - tr.margin)
+        | (y[:, 1] == 1 - tr.margin)
+    )
+    x = x[mask]
+    log_det = tr.apply(variables, x, x)[1]
+
+    def fn(x):
+        v = jnp.array([x])
+        y = tr.apply(variables, v, v)[0]
+        return y.reshape(-1)
+
+    jac = [jacobi.jacobi(fn, xi)[0] for xi in x]
+    log_det_ref = np.log(np.abs([np.linalg.det(jaci) for jaci in jac]))
+    assert_allclose(log_det, log_det_ref, rtol=2e-2)
 
 
 def test_Roll():
@@ -154,3 +191,75 @@ def test_rolling_spline_coupling_bad_input():
 
     with pytest.raises(ValueError):
         bi.rolling_spline_coupling(2, margin=0.51)
+
+
+def test_TransformToBound_1():
+    x = jnp.column_stack(
+        [
+            2 * jax.random.uniform(KEY, shape=(100,)) - 1,
+            jax.random.normal(KEY, shape=(100,)) * 10 - 10,
+            jax.random.exponential(KEY, shape=(100,)) * 10 + 10,
+            1 - jax.random.exponential(KEY, shape=(100,)),
+        ]
+    )
+
+    bounds = [
+        (-1, 1),
+        (-jnp.inf, jnp.inf),
+        (10, jnp.inf),
+        (-jnp.inf, 1),
+    ]
+
+    tr = bi.TransformToBound(bounds, momentum=0)
+    variables = tr.init(KEY, x, x)
+    (y, log_det), variables = tr.apply(
+        variables, x, x, mutable="batch_stats", train=True
+    )
+    x2 = tr.apply(variables, y, y, method="inverse")
+
+    assert y.shape == x.shape
+    assert x2.shape == x.shape
+
+    ymin = jnp.min(y, axis=0)
+    ymax = jnp.max(y, axis=0)
+    assert_array_equal(ymin > 0, True)
+    assert_array_equal(ymax < 1, True)
+    assert_allclose(ymin, 0, atol=5e-2)
+    assert_allclose(ymax, 1, atol=5e-2)
+
+    assert_allclose(x, x2, atol=1e-4)
+
+
+def test_TransformToBound_2():
+    jacobi = pytest.importorskip("jacobi")
+
+    x = jnp.column_stack(
+        [
+            2 * jax.random.uniform(KEY, shape=(10,)) - 1,
+            jax.random.normal(KEY, shape=(10,)) * 10 - 10,
+            jax.random.exponential(KEY, shape=(10,)) * 10 + 10,
+            1 - jax.random.exponential(KEY, shape=(10,)),
+        ]
+    )
+
+    bounds = [
+        (-1, 1),
+        (-jnp.inf, jnp.inf),
+        (10, jnp.inf),
+        (-jnp.inf, 1),
+    ]
+
+    tr = bi.TransformToBound(bounds, momentum=0)
+    variables = tr.init(KEY, x, x)
+    (y, log_det), variables = tr.apply(
+        variables, x, x, mutable="batch_stats", train=True
+    )
+
+    def fn(x):
+        v = jnp.array([x])
+        y = tr.apply(variables, v, v)[0]
+        return y.reshape(-1)
+
+    jac = [jacobi.jacobi(fn, xi)[0] for xi in x]
+    log_det_ref = np.log(np.abs([np.linalg.det(jaci) for jaci in jac]))
+    assert_allclose(log_det, log_det_ref, atol=1e-3)

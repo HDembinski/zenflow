@@ -1,7 +1,7 @@
 """The Flow class which implements a trainable conditional normalizing flow."""
 
 from typing import Union, Optional
-from jaxtyping import Array
+from flax.typing import Array
 
 import jax.numpy as jnp
 import jax

@@ -1,7 +1,6 @@
 """Bijectors used in conditional normalizing flows."""
 
 from typing import Tuple, Sequence, Callable, Union
-from jaxtyping import Array
 from abc import ABC, abstractmethod
 from jax import numpy as jnp
 from .utils import (
@@ -10,12 +9,16 @@ from .utils import (
     rational_quadratic_spline_inverse,
 )
 from flax import linen as nn
+from flax.typing import Array
+from flax.linen.normalization import _compute_stats
 import numpy as np
+from jax import lax
 
 
 __all__ = [
     "Bijector",
     "ShiftBounds",
+    "TransformToBound",
     "Roll",
     "NeuralSplineCoupling",
     "Chain",
@@ -166,6 +169,8 @@ class ShiftBounds(Bijector):
         # distribution to be evaluated outside of its non-zero domain. We clip the
         # values as a workaround.
         z = jnp.clip(z, 0, 1)
+
+        # Now we shrink the interval [0, 1] to [margin, 1 - margin]
         y = (1 - self.margin) * z + (1 - z) * self.margin
 
         abs_deriv = (1 - 2 * self.margin) * xscale
@@ -179,6 +184,123 @@ class ShiftBounds(Bijector):
         z = (y - self.margin) / (1 - 2 * self.margin)
         x = xmax * z + (1 - z) * xmin
 
+        return x
+
+
+class TransformToBound(Bijector):
+    """
+    Transform all values into the interval [0, 1].
+
+    This transformation is necessary before applying the first NeuralSplineCoupling,
+    which only transforms samples inside a hypercube with coordinates in the interval
+    (0, 1) along each dimension.
+
+
+    """
+
+    bounds: Sequence[Tuple[float, float]]
+    momentum: float = 0.99
+    var_epsilon: float = 0.0
+    use_fast_variance: bool = True
+    force_float32_reductions: bool = True
+
+    @nn.compact
+    def __call__(self, x: Array, c: Array, train: bool = False) -> Tuple[Array, Array]:
+        assert len(self.bounds) == x.shape[1]
+        y = jnp.empty(x.shape, x.dtype)
+        log_det = jnp.zeros(x.shape[0], x.dtype)
+        for i, (a, b) in enumerate(self.bounds):
+            xi = x[:, i]
+            if a > -np.inf:
+                # have lower bound
+                if b < np.inf:
+                    assert b > a
+                    # fully bounded
+                    scale = 1 / (b - a)
+                    yi = (xi - a) * scale
+                    ld = np.log(scale) * np.ones(x.shape[0])
+                else:
+                    # only lower bound
+                    lxi = jnp.log(xi - a)
+                    yi, ld = self._transform(i, lxi, train)
+                    ld -= lxi
+            else:  # no lower bound
+                if b < np.inf:
+                    # only upper bound
+                    lxi = jnp.log(b - xi)
+                    yi, ld = self._transform(i, lxi, train)
+                    ld -= lxi
+                else:
+                    # no bounds
+                    yi, ld = self._transform(i, xi, train)
+            y = y.at[:, i].set(yi)
+            log_det += ld
+
+        return y, log_det
+
+    def inverse(self, y: Array, c: Array) -> Array:
+        assert len(self.bounds) == y.shape[1]
+        x = jnp.empty_like(y)
+
+        for i, (a, b) in enumerate(self.bounds):
+            yi = y[:, i]
+            if a > -np.inf:
+                # have lower bound
+                if b < np.inf:
+                    assert b > a
+                    # fully bounded
+                    scale = b - a
+                    xi = yi * scale + a
+                else:
+                    # only lower bound
+                    xi = jnp.exp(self._inverse_transform(i, yi)) + a
+            else:  # no lower bound
+                if b < np.inf:
+                    # only upper bound
+                    xi = b - jnp.exp(self._inverse_transform(i, yi))
+                else:
+                    # no bounds
+                    xi = self._inverse_transform(i, yi)
+            x = x.at[:, i].set(xi)
+        return x
+
+    def _transform(self, i: int, x: Array, train: bool) -> Tuple[Array, Array]:
+        ra_mean = self.variable(
+            "batch_stats", f"mean_{i}", lambda s: jnp.zeros(s, jnp.float32), (1,)
+        )
+        ra_var = self.variable(
+            "batch_stats", f"var_{i}", lambda s: jnp.ones(s, jnp.float32), (1,)
+        )
+
+        if not train:
+            mean, var = ra_mean.value, ra_var.value
+        else:
+            mean, var = _compute_stats(
+                x,
+                (0,),
+                dtype=None,
+                use_fast_variance=self.use_fast_variance,
+                force_float32_reductions=self.force_float32_reductions,
+            )
+
+            if not self.is_initializing():
+                ra_mean.value = (
+                    self.momentum * ra_mean.value + (1 - self.momentum) * mean
+                )
+                ra_var.value = self.momentum * ra_var.value + (1 - self.momentum) * var
+
+        scale = lax.rsqrt(var + self.var_epsilon)
+        z = scale * (x - mean)
+        y = 0.5 * (jnp.tanh(z) + 1)
+        ld = np.log(0.5 * scale) - 2 * np.log(jnp.cosh(z))
+        return y, ld
+
+    def _inverse_transform(self, i: int, y: Array) -> Tuple[Array, Array]:
+        loc = self.get_variable("batch_stats", f"mean_{i}")
+        var = self.get_variable("batch_stats", f"var_{i}")
+        scale = lax.sqrt(var + self.var_epsilon)
+        z = jnp.atanh(2 * y - 1)
+        x = z * scale + loc
         return x
 
 

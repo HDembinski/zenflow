@@ -1,7 +1,7 @@
 """Base distributions used in conditional normalizing flows."""
 
 from abc import ABC, abstractmethod
-from jaxtyping import Array
+from flax.typing import Array
 from typing import Optional
 import jax.numpy as jnp
 from jax import random
