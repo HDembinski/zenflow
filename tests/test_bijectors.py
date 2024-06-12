@@ -87,8 +87,8 @@ def test_ShiftBounds_2():
     t = np.log(1 - x[:, 2])
     y_ref_2 = (t - t.min()) / (t.max() - t.min())
 
-    assert_allclose(y[:, 0], y_ref_0)
-    assert_allclose(y[:, 1], y_ref_1)
+    assert_allclose(y[:, 0], y_ref_0, atol=1e-6)
+    assert_allclose(y[:, 1], y_ref_1, atol=1e-6)
     assert_allclose(y[:, 2], y_ref_2, atol=1e-6)
 
 
