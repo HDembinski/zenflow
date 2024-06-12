@@ -131,21 +131,22 @@ def chain(*bijectors):
 
 class ShiftBounds(Bijector):
     """
-    Shift values into the interval [margin, 1 - margin].
+    Shift values into the unit interval.
 
     This bijector keeps track of the smallest and largest inputs along each dimension of
     the target distribution and applies an affine transformation so that all values are
-    inside a hypercube where each side starts at `margin` and ends at `1 - margin`.
+    inside the unit hypercube.
 
     This transformation is necessary before applying the first NeuralSplineCoupling,
-    which only transforms samples inside a hypercube with coordinates in the interval
-    (0, 1) along each dimension. A value margin > 0 guarantees that values are never
-    mapped to the boundary values, where the latent distribution may be exactly zero.
+    which only transforms samples inside this hypercube. Some latent distributions
+    further require that no samples end up exactly at the edges of the cube. This is
+    achieved by setting the margin parameter to a small positive value.
 
-    It is possible to declare the bounds of a bounded variable. If the variable is
-    fully bounded, ShiftBounds will not try to estimate the minimum and maximum value from the sample and use the known bounds instead. For samples which are bounded
-    on one side, a log-transform is applied to make the variable unbounded before
-    the usual processing.
+    It is possible to explicitly declare bounds of a bounded variable to enable special
+    treatment. If the variable is bounded on both sides, ShiftBounds will not try to
+    estimate the minimum and maximum value from the sample and use the known bounds. For
+    samples which are bounded on one side, a log-transform is applied to make the
+    variable unbounded before the usual processing.
     """
 
     margin: float = 0.1
