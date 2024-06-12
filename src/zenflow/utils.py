@@ -1,7 +1,7 @@
 """Utility functions used in other modules."""
 
 from typing import Tuple
-from jaxtyping import Array
+from flax.typing import Array
 import jax.numpy as jnp
 
 __all__ = [
