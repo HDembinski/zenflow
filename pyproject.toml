@@ -8,7 +8,7 @@ description = "Learn distributions with normalizing flows."
 authors = [{ name = "Hans Dembinski" }, { email = "hans.dembinski@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["jax", "jaxlib", "flax", "optax"]
+dependencies = ["jax", "jaxlib", "flax", "optax", "typing_extensions"]
 dynamic = ["version"]
 
 [project.urls]
