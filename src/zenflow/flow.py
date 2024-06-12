@@ -19,14 +19,6 @@ class Flow(nn.Module):
     bijector: Bijector
     latent: Distribution = Beta()
 
-    @nn.nowrap
-    def _normalize_c(self, x: Array, c: Optional[Array]):
-        if c is None:
-            c = jnp.zeros((x.shape[0], 0))
-        elif c.ndim == 1:
-            c = c.reshape(-1, 1)
-        return c
-
     def __call__(
         self,
         x: Array,
@@ -50,8 +42,7 @@ class Flow(nn.Module):
             Whether to run in training mode (update BatchNorm statistics, etc.).
 
         """
-        c = self._normalize_c(x, c)
-        x, log_det = self.bijector(x, c, train)
+        x, log_det = self.bijector(x, _normalize_c(c), train)
         log_prob = self.latent.log_prob(x) + log_det
         log_prob = jnp.nan_to_num(log_prob, nan=-jnp.inf)
         return log_prob
@@ -78,12 +69,10 @@ class Flow(nn.Module):
         """
         if isinstance(conditions_or_size, int):
             size = conditions_or_size
-            c = jnp.zeros((size, 0))
+            c = None
         else:
             size = conditions_or_size.shape[0]
-            c = conditions_or_size
-            if c.ndim == 1:
-                c = c.reshape(-1, 1)
+            c = _normalize_c(conditions_or_size)
         x = self.latent.sample(size, jax.random.PRNGKey(seed))
         x = self.bijector.inverse(x, c)
         return x
@@ -92,7 +81,7 @@ class Flow(nn.Module):
         if not isinstance(self.bijector, Chain):
             raise ValueError("only for Chain bijector")
 
-        c = self._normalize_c(x, c)
+        c = _normalize_c(c)
 
         results = []
         if inverse:
@@ -104,3 +93,9 @@ class Flow(nn.Module):
                 x, _ = bijector(x, c, False)
                 results.append(x)
         return results
+
+
+def _normalize_c(c: Optional[Array]):
+    if c is not None and c.ndim == 1:
+        c = c.reshape(-1, 1)
+    return c

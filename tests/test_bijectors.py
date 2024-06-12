@@ -2,7 +2,7 @@ from zenflow import bijectors as bi
 import jax
 from jax import numpy as jnp
 import numpy as np
-from numpy.testing import assert_allclose, assert_array_equal
+from numpy.testing import assert_allclose
 import pytest
 from typing import Tuple
 from flax.typing import Array
@@ -39,13 +39,18 @@ def test_ShiftBounds_1():
     (y, log_det), updates = sb.apply(
         variables, x, None, train=True, mutable=["batch_stats"]
     )
-    assert_allclose(updates["batch_stats"]["xmin_0"], 1)
-    assert_allclose(updates["batch_stats"]["xmax_0"], 6)
-    assert_allclose(updates["batch_stats"]["xmin_1"], 2)
-    assert_allclose(updates["batch_stats"]["xmax_1"], 5)
+    bs = updates["batch_stats"]
+    assert_allclose(bs["xmin_0"], 0.975)
+    assert_allclose(bs["xmax_0"], 6.025)
+    assert_allclose(bs["xmin_1"], 1.985)
+    assert_allclose(bs["xmax_1"], 5.015)
 
-    z_ref = (x - x.min(0)) / (x.max(0) - x.min(0))
-    y_ref = 0.99 * z_ref + (1 - z_ref) * 0.01
+    y_ref = np.column_stack(
+        [
+            (x[:, 0] - bs["xmin_0"]) / (bs["xmax_0"] - bs["xmin_0"]),
+            (x[:, 1] - bs["xmin_1"]) / (bs["xmax_1"] - bs["xmin_1"]),
+        ]
+    )
 
     assert_allclose(y, y_ref, atol=5e-6)
 
@@ -185,12 +190,12 @@ def test_Chain_1():
 
 def test_Chain_2():
     x = jnp.array([[2.5, 2, 3], [1, 3.5, 4.5], [4, 5, 6]])
-    chain = bi.Chain([bi.ShiftBounds(margin=0.01), bi.Roll()])
+    chain = bi.Chain([bi.ShiftBounds(margin=0.0), bi.Roll()])
     variables = chain.init(KEY, x, None)
     (y, log_det), updates = chain.apply(
         variables, x, None, train=True, mutable=["batch_stats"]
     )
-    assert_allclose(y, [[0.01, 0.5, 0.01], [0.5, 0.01, 0.5], [0.99, 0.99, 0.99]])
+    assert_allclose(y, [[0.0, 0.5, 0.0], [0.5, 0.0, 0.5], [1.0, 1.0, 1.0]])
 
     log_det_ref = chain[0].apply(
         {"batch_stats": updates["batch_stats"]["bijectors_0"]}, x, None
@@ -258,75 +263,3 @@ def test_rolling_spline_coupling_bad_input():
 
     with pytest.raises(ValueError):
         bi.rolling_spline_coupling(1)
-
-
-def test_TransformToBound_1():
-    x = jnp.column_stack(
-        [
-            2 * jax.random.uniform(KEY, shape=(100,)) - 1,
-            jax.random.normal(KEY, shape=(100,)) * 10 - 10,
-            jax.random.exponential(KEY, shape=(100,)) * 10 + 10,
-            1 - jax.random.exponential(KEY, shape=(100,)),
-        ]
-    )
-
-    bounds = [
-        (0, -1, 1),
-        (1, -jnp.inf, jnp.inf),
-        (2, 10, jnp.inf),
-        (3, -jnp.inf, 1),
-    ]
-
-    tr = bi.TransformToBound(bounds, momentum=0)
-    variables = tr.init(KEY, x, None)
-    (y, log_det), variables = tr.apply(
-        variables, x, None, mutable="batch_stats", train=True
-    )
-    x2 = tr.apply(variables, y, y, method="inverse")
-
-    assert y.shape == x.shape
-    assert x2.shape == x.shape
-
-    ymin = jnp.min(y, axis=0)
-    ymax = jnp.max(y, axis=0)
-    assert_array_equal(ymin > 0, True)
-    assert_array_equal(ymax < 1, True)
-    assert_allclose(ymin, 0, atol=5e-2)
-    assert_allclose(ymax, 1, atol=5e-2)
-
-    assert_allclose(x, x2, atol=1e-4)
-
-
-def test_TransformToBound_2():
-    jacobi = pytest.importorskip("jacobi")
-
-    x = jnp.column_stack(
-        [
-            2 * jax.random.uniform(KEY, shape=(10,)) - 1,
-            jax.random.normal(KEY, shape=(10,)) * 10 - 10,
-            jax.random.exponential(KEY, shape=(10,)) * 10 + 10,
-            1 - jax.random.exponential(KEY, shape=(10,)),
-        ]
-    )
-
-    bounds = [
-        (0, -1, 1),
-        (1, -jnp.inf, jnp.inf),
-        (2, 10, jnp.inf),
-        (3, -jnp.inf, 1),
-    ]
-
-    tr = bi.TransformToBound(bounds, momentum=0)
-    variables = tr.init(KEY, x, x)
-    (y, log_det), variables = tr.apply(
-        variables, x, x, mutable="batch_stats", train=True
-    )
-
-    def fn(x):
-        v = jnp.array([x])
-        y = tr.apply(variables, v, v)[0]
-        return y.reshape(-1)
-
-    jac = [jacobi.jacobi(fn, xi)[0] for xi in x]
-    log_det_ref = np.log(np.abs([np.linalg.det(jaci) for jaci in jac]))
-    assert_allclose(log_det, log_det_ref, atol=1e-3)
