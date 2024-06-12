@@ -1,6 +1,6 @@
 """Bijectors used in conditional normalizing flows."""
 
-from typing import Tuple, Sequence, Callable, Union, Optional, Dict
+from typing import Tuple, Sequence, Callable, Union, Optional, Dict, TypeGuard
 from abc import ABC, abstractmethod
 from jax import numpy as jnp
 from .utils import (
@@ -168,7 +168,6 @@ class ShiftBounds(Bijector):
                     msg = f"index {i} is out of bounds"
                     raise ValueError(msg)
                 if _is_set(a) and _is_set(b):
-                    assert a is not None and b is not None
                     if b < a:
                         raise ValueError("upper bound must be larger than lower bound")
 
@@ -185,20 +184,17 @@ class ShiftBounds(Bijector):
             if _is_set(a):
                 if _is_set(b):
                     # fully bounded
-                    assert a is not None and b is not None
                     mul = 1 / (b - a)
                     assert mul > 0
                     zi = (xi - a) * mul
                     ld = jnp.log(mul)
                 else:
                     # only lower bound
-                    assert a is not None
                     ti = jnp.log(xi - a)
                     zi, ld = self._transform_to_unit_interval(i, ti, train)
                     ld -= ti
             elif _is_set(b):
                 # only upper bound
-                assert b is not None
                 ti = jnp.log(b - xi)
                 zi, ld = self._transform_to_unit_interval(i, ti, train)
                 ld -= ti
@@ -225,7 +221,6 @@ class ShiftBounds(Bijector):
             if _is_set(a):
                 if _is_set(b):
                     # fully bounded
-                    assert a is not None and b is not None
                     xi = zi * b + (1 - zi) * a
                 else:
                     # only lower bound
@@ -298,7 +293,6 @@ class TransformToBound(Bijector):
                     msg = f"index {i} is out of bounds"
                     raise ValueError(msg)
                 if _is_set(a) and _is_set(b):
-                    assert a is not None and b is not None
                     if b < a:
                         raise ValueError("upper bound must be larger than lower bound")
         bounds = {i: (a, b) for (i, a, b) in self.bounds}
@@ -310,19 +304,16 @@ class TransformToBound(Bijector):
             if _is_set(a):
                 if _is_set(b):
                     # fully bounded
-                    assert a is not None and b is not None
                     scale = 1 / (b - a)
                     yi = (xi - a) * scale
                     ld = jnp.log(scale)
                 else:
                     # only lower bound
-                    assert a is not None
                     lxi = jnp.log(xi - a)
                     yi, ld = self._transform(i, lxi, train)
                     ld -= lxi
             elif _is_set(b):
                 # only upper bound
-                assert b is not None
                 lxi = jnp.log(b - xi)
                 yi, ld = self._transform(i, lxi, train)
                 ld -= lxi
@@ -335,25 +326,20 @@ class TransformToBound(Bijector):
         return y, log_det
 
     def inverse(self, y: Array, c: Array) -> Array:
-        assert len(self.bounds) == y.shape[1]
-        x = jnp.empty(y.shape, y.dtype)
-
         bounds = {i: (a, b) for (i, a, b) in self.bounds}
+        x = jnp.empty(y.shape, y.dtype)
         for i in range(y.shape[1]):
             yi = y[:, i]
             a, b = bounds.get(i, (None, None))
             if _is_set(a):
-                assert a is not None
                 if _is_set(b):
                     # fully bounded
-                    assert b is not None
                     scale = b - a
                     xi = yi * scale + a
                 else:
                     # only lower bound
                     xi = jnp.exp(self._inverse_transform(i, yi)) + a
             elif _is_set(b):
-                assert b is not None
                 # only upper bound
                 xi = b - jnp.exp(self._inverse_transform(i, yi))
             else:
@@ -548,5 +534,5 @@ def rolling_spline_coupling(
     return Chain(bijectors)
 
 
-def _is_set(x):
+def _is_set(x: Optional[float]) -> TypeGuard[float]:
     return x is not None and np.isfinite(x)
