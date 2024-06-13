@@ -23,7 +23,7 @@ There is currently no online documentation, but the library has useful docstring
 
 This project was originally forked from [PZFlow](https://github.com/jfcrenshaw/pzflow) by [John Franklin Crenshaw](jfcrenshaw@gmail.com), but largely rewritten. PZFlow itself draws from other repositories, which are listed in the PZFlow documentation. I needed a code base which is simple to understand and stripped down to the essentials for my use case. Differences between PZFlow and zenflow:
 
-* zenflow uses generic JAX arrays for data input and output, while PZFlow enforces the use of Pandas.
+* zenflow uses generic JAX arrays for data input and output, while PZFlow enforces the use of Pandas dataframes.
 * zenflow implements all trainable objects as FLAX modules, while PZFlow uses JAX primitives. Like FLAX, zenflow follows a clean functional design.
 * PZflow supports training on data points with uncertainties, zenflow has no support for that.
 * PZflow supports computing marginalized posterior densities, zenflow has no support for that.
