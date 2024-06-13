@@ -26,9 +26,11 @@ This project was originally forked from [PZFlow](https://github.com/jfcrenshaw/p
 * zenflow uses generic JAX arrays for data input and output, while PZFlow enforces the use of Pandas dataframes.
 * zenflow implements all trainable objects as FLAX modules, while PZFlow uses JAX primitives.
 * Like FLAX, zenflow follows a clean functional design.
-* PZflow supports training on data points with uncertainties, zenflow has no support for that.
-* PZflow supports computing marginalized posterior densities, zenflow has no support for that.
-* PZflow supports periodic data, which is currently not supported by zenflow (I plan to reintroduce this later).
-* PZflow supports more bijectors than zenflow.
 
 Because all trainable objects, like the flow object itself and its bijectors are FLAX modules, one can make new FLAX modules that build on flow objects or bijectors, and train the combination. This, for example, allows one to construct conditional PDFs that use complex models like transformers to provide the conditional input, and train everything together. The examples include an application that uses a Deep Set as conditional input for the PDF.
+
+Features of PZFlow that are not (yet) included in zenflow:
+* Training on data points with uncertainties.
+* Computing marginalized posterior densities. This can be done "by hand", however.
+* Supports for periodic variables (I plan to reintroduce this later).
+* Additional bijectors that are not needed for the neural spline coupling approach.
