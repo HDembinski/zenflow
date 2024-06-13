@@ -3,7 +3,7 @@
 [![](https://img.shields.io/pypi/v/zenflow.svg)](https://pypi.org/project/zenflow/)
 [![Coverage Status](https://coveralls.io/repos/github/HDembinski/zenflow/badge.svg?branch=main)](https://coveralls.io/github/HDembinski/zenflow?branch=main)
 
-This library implements a flow-based generative model and bijectors which are implemented as FLAX modules. Conditional flows are supported.
+Fast conditional flow-based generative models which are implemented as FLAX modules. Conditional PDFs are supported.
 
 ## License
 
