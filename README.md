@@ -39,7 +39,7 @@ Features of PZFlow that are not included in zenflow:
 * Training on data points with uncertainties.
 * Computing marginalized posterior densities. This can be done "by hand", however.
 * Bijectors that are not needed for the neural spline coupling approach.
-* Supports for periodic variables.
+* Support for periodic variables.
 
 Features which are planned:
-* Supports for periodic variables.
+* Support for periodic variables.
